@@ -418,24 +418,26 @@ async def update_workspace_notebook(
         return await resp.json()
 
 
-async def delete_workspace_notebook(
+async def _delete_file(
     fork_full_name: str,
     access_token: str,
-    filename: str,
-    message: str | None = None,
+    path: str,
+    message: str,
+    action: str,
 ) -> bool:
-    """Delete a notebook file from the fork's `WORKSPACE_BRANCH`. Idempotent.
+    """Delete the file at `path` from the fork's `WORKSPACE_BRANCH`. Idempotent.
 
-    `fork_full_name` is the verified `owner/repo` of the fork. The Contents API
-    requires the file's current blob `sha`, so this fetches it first; if the
-    file is already absent, returns False without erroring. As with create, it
-    refuses to touch the upstream source. Returns True if a file was deleted.
+    Shared by `delete_workspace_notebook` and `delete_snapshot_notebook`. The
+    Contents API requires the file's current blob `sha`, so this fetches it
+    first; if the file is already absent, returns False without erroring. As
+    with `_create_file`, refuses to touch the upstream source and never follows
+    redirects, so a transfer redirect surfaces as an error. Returns True if a
+    file was deleted.
     """
     if fork_full_name.lower() == upstream_full_name().lower():
         raise RuntimeError(
             f"refusing to write to the upstream source repo {fork_full_name!r}"
         )
-    path = f"{WORKSPACE_CONTENTS_PATH}/{filename}"
     url = f"{GITHUB_API_BASE}/repos/{fork_full_name}/contents/{path}"
     async with aiohttp.ClientSession() as session:
         head = await session.get(
@@ -443,11 +445,11 @@ async def delete_workspace_notebook(
         )
         if head.status == 404:
             return False
-        await _ensure_ok(head, "delete notebook (lookup)")
+        await _ensure_ok(head, f"{action} (lookup)")
         sha = (await head.json())["sha"]
 
         payload = {
-            "message": message or f"workspace: delete {filename}",
+            "message": message,
             "sha": sha,
             "branch": WORKSPACE_BRANCH,
         }
@@ -459,8 +461,50 @@ async def delete_workspace_notebook(
         )
         if 300 <= resp.status < 400:
             raise RuntimeError(
-                f"delete notebook: {fork_full_name!r} redirected "
+                f"{action}: {fork_full_name!r} redirected "
                 f"(HTTP {resp.status}) — not a writable fork path"
             )
-        await _ensure_ok(resp, "delete notebook")
+        await _ensure_ok(resp, action)
         return True
+
+
+async def delete_workspace_notebook(
+    fork_full_name: str,
+    access_token: str,
+    filename: str,
+    message: str | None = None,
+) -> bool:
+    """Delete a notebook under `notebooks/workspace/` on the fork. Idempotent.
+
+    Thin wrapper over `_delete_file` targeting `WORKSPACE_CONTENTS_PATH`; see
+    that helper for the upstream-source and redirect guards. Returns True if a
+    file was deleted, False if it was already absent.
+    """
+    return await _delete_file(
+        fork_full_name,
+        access_token,
+        f"{WORKSPACE_CONTENTS_PATH}/{filename}",
+        message or f"workspace: delete {filename}",
+        "delete notebook",
+    )
+
+
+async def delete_snapshot_notebook(
+    fork_full_name: str,
+    access_token: str,
+    filename: str,
+    message: str | None = None,
+) -> bool:
+    """Delete a frozen notebook under `notebooks/snapshots/` on the fork. Idempotent.
+
+    Thin wrapper over `_delete_file` targeting `SNAPSHOTS_CONTENTS_PATH`; see
+    that helper for the upstream-source and redirect guards. Returns True if a
+    file was deleted, False if it was already absent.
+    """
+    return await _delete_file(
+        fork_full_name,
+        access_token,
+        f"{SNAPSHOTS_CONTENTS_PATH}/{filename}",
+        message or f"snapshot: delete {filename}",
+        "delete snapshot",
+    )

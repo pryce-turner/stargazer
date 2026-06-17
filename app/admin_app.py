@@ -68,6 +68,7 @@ from app.github import (
     canonical_fork_name,
     create_snapshot_notebook,
     create_workspace_notebook,
+    delete_snapshot_notebook,
     delete_workspace_notebook,
     find_existing_fork,
     fork_upstream,
@@ -961,6 +962,38 @@ async def workspace_snapshot(request: Request, slug: str = Form(...)):
     tile = _snapshot_tile_dict(slug)
     tile_html = templates.env.get_template("_tile.html").render(tile=tile)
     return JSONResponse({"status": "snapshotted", "slug": slug, "tile_html": tile_html})
+
+
+@asgi_app.post("/snapshot/delete")
+async def snapshot_delete(request: Request, slug: str = Form(...)):
+    """Delete a frozen snapshot notebook from the user's fork.
+
+    Removes `<slug>.py` from the fork's `notebooks/snapshots/` (idempotent — a
+    file that's already gone still returns 200) and tears down any run pod for
+    that slug, so a deleted snapshot leaves nothing behind. Snapshots are
+    fork-backed, so this requires the workspace opt-in. Teardown is best-effort
+    and never fails the delete.
+    """
+    session = _get_session(request)
+    if session is None:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    if not session.workspace_enabled:
+        return JSONResponse({"error": "enable workspace saving first"}, status_code=403)
+    if _notebook_slug(slug) != slug:
+        return JSONResponse(
+            {"error": f"invalid or reserved notebook: {slug!r}"}, status_code=400
+        )
+
+    await _teardown_notebook_pods(session, slug)
+
+    try:
+        token = await installation_tokens.fork_token(session.fork_full_name)
+        await delete_snapshot_notebook(session.fork_full_name, token, f"{slug}.py")
+    except Exception as exc:
+        logger.error(f"Snapshot delete failed for {slug!r}: {exc}")
+        return JSONResponse({"error": f"delete failed: {exc}"}, status_code=502)
+
+    return JSONResponse({"status": "deleted", "slug": slug})
 
 
 @asgi_app.post("/launch")

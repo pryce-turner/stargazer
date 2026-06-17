@@ -518,6 +518,48 @@
         snapshotNotebook(btn);
     });
 
+    // Delete a frozen snapshot from the fork. Mirrors deleteNotebook but hits
+    // /snapshot/delete (the snapshots dir, not workspace); on success drop the
+    // tile and bring the empty-state hint back if the grid is now empty.
+    async function deleteSnapshot(btn) {
+        const slug = btn.dataset.snapshotDeleteSlug;
+        if (
+            !confirm(
+                `Delete snapshot "${slug}"? This removes it from your fork.`,
+            )
+        )
+            return;
+        const restore = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-inline"></span>';
+        try {
+            const resp = await fetch("/snapshot/delete", {
+                method: "POST",
+                body: new URLSearchParams({ slug }),
+                headers: { Accept: "application/json" },
+            });
+            const payload = await resp.json().catch(() => ({}));
+            if (!resp.ok)
+                throw new Error(payload.error || "HTTP " + resp.status);
+            btn.closest(".tile").remove();
+            const grid = document.getElementById("snapshots-grid");
+            const empty = document.getElementById("snapshots-empty");
+            if (grid && empty && grid.querySelectorAll(".tile").length === 0)
+                empty.hidden = false;
+        } catch (err) {
+            btn.disabled = false;
+            btn.innerHTML = restore;
+            alert("Delete failed: " + err.message);
+        }
+    }
+
+    document.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-snapshot-delete-slug]");
+        if (!btn) return;
+        e.preventDefault();
+        deleteSnapshot(btn);
+    });
+
     // Edit a workspace notebook's resources + description via the gear → modal.
     // The gear carries the current values as data-*; Save POSTs them and
     // refreshes the tile blurb + the gear's data-* in place — no reload.
