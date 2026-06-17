@@ -194,8 +194,29 @@
 }
 .link-chip.dangling { background: transparent; color: var(--text-dim); border-color: var(--border); cursor: default; }
 .detail-actions { margin-top: 0.6rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
-.detail-edit { margin: 0.6rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
-.detail-edit .kv-row .kv-k[readonly] { color: var(--text-dim); background: transparent; border-style: dashed; }
+.detail-edit { margin: 0.7rem 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.detail-edit input {
+    background: #0d1117;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.82rem;
+    font-family: inherit;
+}
+.detail-edit input:focus { outline: none; border-color: var(--accent); }
+/* Existing keys can't be renamed (Pinata merges keyvalues), so they read as a
+   fixed mono label beside the editable value — not a dashed pseudo-input that
+   only looks disabled. New rows still expose a real, editable key input. */
+.detail-edit .kv-key {
+    flex: 0 0 8.5rem;
+    align-self: center;
+    text-align: right;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    word-break: break-all;
+}
 .edit-note { font-size: 0.76rem; color: var(--text-dim); }
 .edit-err { font-size: 0.8rem; color: var(--danger); }
 
@@ -315,10 +336,10 @@
             <button data-view="list" role="tab" aria-selected="false">List</button>
         </div>
         <div class="asset-filters">
-            <input id="filter-type" list="type-options" placeholder="asset type" />
+            <input id="filter-type" list="type-options" placeholder="Asset Type" />
             <datalist id="type-options"></datalist>
-            <input id="filter-key" placeholder="key" size="10" />
-            <input id="filter-val" placeholder="value" size="10" />
+            <input id="filter-key" placeholder="Key" size="10" />
+            <input id="filter-val" placeholder="Value" size="10" />
             <button class="btn btn-muted" id="filter-apply" type="button">Filter</button>
         </div>
     </div>
@@ -813,11 +834,21 @@ function renderDetailEditor(el, rec) {
 }
 
 function kvEditRow(k, v, lockKey) {
+    if (lockKey) {
+        // Locked key: a quiet label (the row carries the key in data-key for
+        // save), with only the value editable.
+        return (
+            `<div class="kv-row" data-key="${esc(k)}">` +
+            `<span class="kv-key">${esc(k)}</span>` +
+            `<input type="text" class="kv-v" value="${esc(v)}" placeholder="value" />` +
+            `</div>`
+        );
+    }
     return (
         `<div class="kv-row">` +
-        `<input type="text" class="kv-k" value="${esc(k)}" placeholder="key"${lockKey ? " readonly" : ""} />` +
+        `<input type="text" class="kv-k" value="${esc(k)}" placeholder="key" />` +
         `<input type="text" class="kv-v" value="${esc(v)}" placeholder="value" />` +
-        (lockKey ? "" : `<button type="button" class="kv-del">✕</button>`) +
+        `<button type="button" class="kv-del">✕</button>` +
         `</div>`
     );
 }
@@ -827,7 +858,8 @@ async function saveEdit(cid) {
     errEl.hidden = true;
     const keyvalues = {};
     for (const row of $("edit-rows").querySelectorAll(".kv-row")) {
-        const k = row.querySelector(".kv-k").value.trim();
+        const keyInput = row.querySelector(".kv-k");
+        const k = (keyInput ? keyInput.value : row.dataset.key || "").trim();
         const v = row.querySelector(".kv-v").value;
         if (!k) continue;
         if (k.startsWith("_") || k === "cid" || k === "name") {
