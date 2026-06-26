@@ -84,6 +84,7 @@ from app.notebook_meta import (
     NotebookResources,
     memory_to_gib,
     parse_notebook_description,
+    parse_notebook_name,
     parse_notebook_resources,
     resources_from_inputs,
     with_stargazer_resources,
@@ -409,11 +410,17 @@ def _display_name(filename: str) -> str:
 _GENERIC_WS_DESC = "Personal workspace notebook."
 
 
-def _workspace_tile_dict(slug: str, cpu: int, memory: int, description: str) -> dict:
-    """A workspace tile carrying its editable resources + blurb for the modal."""
+def _workspace_tile_dict(
+    slug: str, cpu: int, memory: int, description: str, name: str = ""
+) -> dict:
+    """A workspace tile carrying its editable resources + blurb for the modal.
+
+    `name` is the title the user typed at creation, preserved verbatim; when
+    absent (older notebooks) the title falls back to a filename-derived form.
+    """
     return _tile_dict(
         slug,
-        _display_name(f"{slug}.py"),
+        name or _display_name(f"{slug}.py"),
         description or _GENERIC_WS_DESC,
         "workspace",
         cpu=cpu,
@@ -464,7 +471,7 @@ async def _workspace_tiles(
 
     async def _tile(slug: str) -> dict:
         """Build one workspace tile, parsing its header (best-effort)."""
-        cpu, memory, desc = DEFAULT_RESOURCES.cpu, default_gib, ""
+        cpu, memory, desc, name = DEFAULT_RESOURCES.cpu, default_gib, "", ""
         if token is not None:
             try:
                 src = await get_workspace_notebook(
@@ -474,9 +481,10 @@ async def _workspace_tiles(
                     res = parse_notebook_resources(src)
                     cpu, memory = res.cpu, memory_to_gib(res.memory)
                     desc = parse_notebook_description(src)
+                    name = parse_notebook_name(src)
             except Exception as exc:
                 logger.warning(f"Workspace metadata fetch failed for {slug!r}: {exc}")
-        return _workspace_tile_dict(slug, cpu, memory, desc)
+        return _workspace_tile_dict(slug, cpu, memory, desc, name=name)
 
     return list(await asyncio.gather(*[_tile(s) for s in slugs]))
 
@@ -721,17 +729,22 @@ async def app_install_callback(request: Request):
     return _session_redirect("/", session)
 
 
-_NOTEBOOK_NAME_RE = re.compile(r"[^a-z0-9]+")
+_NOTEBOOK_WS_RE = re.compile(r"\s+")
+_NOTEBOOK_UNSAFE_RE = re.compile(r"[^a-z0-9._-]+")
 
 
 def _notebook_slug(name: str) -> str | None:
-    """Sanitize a user-supplied notebook name into a filesystem-safe slug.
+    """Derive a filesystem-safe filename slug from a notebook name.
 
-    Lowercases, collapses runs of non-alphanumerics to single hyphens, and
-    trims leading/trailing hyphens. Returns None when the result is empty or
-    collides with a reserved seed slug (`SEED_SLUGS`).
+    Lowercases everything and substitutes dashes for spaces; the original
+    name is preserved verbatim as the display title (stored in the notebook
+    header — see `parse_notebook_name`). Any character outside `[a-z0-9._-]`
+    is dropped so the slug stays a safe, traversal-free filename, then
+    leading/trailing separators are trimmed. Returns None when the result is
+    empty or collides with a reserved seed slug (`SEED_SLUGS`).
     """
-    slug = _NOTEBOOK_NAME_RE.sub("-", name.strip().lower()).strip("-")
+    slug = _NOTEBOOK_WS_RE.sub("-", name.strip().lower())
+    slug = _NOTEBOOK_UNSAFE_RE.sub("", slug).strip("-._")
     if not slug or slug in SEED_SLUGS:
         return None
     return slug
@@ -768,6 +781,9 @@ async def workspace_create(
             {"error": f"invalid or reserved notebook name: {name!r}"}, status_code=400
         )
 
+    # The title the user typed, preserved verbatim (whitespace collapsed) for
+    # the tile; the slug above is the lowercased, dash-joined filename form.
+    display_name = " ".join(name.split())
     filename = f"{slug}.py"
     resources = resources_from_inputs(cpu, memory)
     repo = session.fork_full_name
@@ -786,7 +802,7 @@ async def workspace_create(
             return JSONResponse(
                 {"error": f"{source} seed not found in fork"}, status_code=502
             )
-        content = with_stargazer_resources(seed_src, resources)
+        content = with_stargazer_resources(seed_src, resources, name=display_name)
 
         await create_workspace_notebook(repo, token, filename, content)
     except Exception as exc:
@@ -798,7 +814,7 @@ async def workspace_create(
     # then the standard launch + status flow). Create stays a pure "add a
     # notebook" action: no launching, no navigation.
     tile = _workspace_tile_dict(
-        slug, resources.cpu, memory_to_gib(resources.memory), ""
+        slug, resources.cpu, memory_to_gib(resources.memory), "", name=display_name
     )
     tile_html = templates.env.get_template("_tile.html").render(tile=tile)
     return JSONResponse({"slug": slug, "tile_html": tile_html})
@@ -841,7 +857,14 @@ async def workspace_settings(
             return JSONResponse(
                 {"error": f"notebook not found: {filename}"}, status_code=404
             )
-        content = with_stargazer_resources(source, resources, description=desc or None)
+        # Rewrites the whole table — re-pass the stored display name so this
+        # resources/description edit doesn't drop it.
+        content = with_stargazer_resources(
+            source,
+            resources,
+            description=desc or None,
+            name=parse_notebook_name(source) or None,
+        )
         await update_workspace_notebook(
             repo, token, filename, content, message=f"workspace: settings {filename}"
         )

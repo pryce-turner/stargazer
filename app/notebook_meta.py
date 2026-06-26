@@ -111,6 +111,18 @@ def parse_notebook_description(source: str) -> str:
     return value if isinstance(value, str) else ""
 
 
+def parse_notebook_name(source: str) -> str:
+    """Return the `[tool.stargazer]` `name` string, or "" if absent.
+
+    The display name preserves the title exactly as the user typed it at
+    creation (the filename is a lowercased, dash-joined derivation, so the
+    original casing/spacing can't be recovered from it). The workspace tile
+    falls back to deriving a title from the filename when this is "".
+    """
+    value = _extract_stargazer_table(source).get("name", "")
+    return value if isinstance(value, str) else ""
+
+
 def memory_to_gib(memory: str) -> int:
     """Read a `NotebookResources.memory` quantity back to a GiB integer.
 
@@ -172,12 +184,13 @@ def _toml_str(value: str) -> str:
 
 
 def _stargazer_table_lines(
-    resources: NotebookResources, description: str | None
+    resources: NotebookResources, description: str | None, name: str | None = None
 ) -> list[str]:
     """Render the commented `[tool.stargazer]` TOML lines for a header."""
-    lines = [
-        "#",
-        "# [tool.stargazer]",
+    lines = ["#", "# [tool.stargazer]"]
+    if name:
+        lines.append(f"# name = {_toml_str(name)}")
+    lines += [
         f"# cpu = {resources.cpu}",
         f'# memory = "{resources.memory}"',
     ]
@@ -209,15 +222,19 @@ def _strip_stargazer_table(body_lines: list[str]) -> list[str]:
 
 
 def with_stargazer_resources(
-    source: str, resources: NotebookResources, description: str | None = None
+    source: str,
+    resources: NotebookResources,
+    description: str | None = None,
+    name: str | None = None,
 ) -> str:
     """Return `source` with its `[tool.stargazer]` block set to `resources`.
 
-    Rewrites the whole table, so `description` (the workspace tile blurb) is
-    written when truthy and dropped when None/empty — callers that edit settings
-    pass the current value so it's preserved, and create omits it. Replaces an
-    existing table or appends one before the header's closing `# ///`. Returns
-    `source` unchanged if there's no PEP 723 script block to inject into.
+    Rewrites the whole table, so `description` (the workspace tile blurb) and
+    `name` (the display title) are written when truthy and dropped when
+    None/empty — callers that edit settings pass the current values so they're
+    preserved. Replaces an existing table or appends one before the header's
+    closing `# ///`. Returns `source` unchanged if there's no PEP 723 script
+    block to inject into.
     """
     match = _PEP723_BLOCK.search(source)
     if match is None or match.group("type") != "script":
@@ -229,6 +246,11 @@ def with_stargazer_resources(
     while body and body[-1].lstrip("#").strip() == "":
         body.pop()
     new_block = "\n".join(
-        [open_line, *body, *_stargazer_table_lines(resources, description), close_line]
+        [
+            open_line,
+            *body,
+            *_stargazer_table_lines(resources, description, name),
+            close_line,
+        ]
     )
     return source[: match.start()] + new_block + source[match.end() :]

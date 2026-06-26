@@ -235,7 +235,18 @@ def per_notebook_env(
         name=f"nb-{slug}-{mode}",
         description=f"Per-notebook app: {slug} ({mode})",
         image=notebook_app_img,
+        # `exec` is load-bearing, not cosmetic. Flyte's `fserve` (PID 1) runs
+        # these args via `Popen(" ".join(args), shell=True)` and, on the Knative
+        # SIGTERM at scale-to-zero, forwards the signal to that single direct
+        # child only. Without `exec`, Debian's `/bin/sh -c "launch-notebook.sh …"`
+        # can linger as an intermediate shell that swallows SIGTERM, so the
+        # launch script's final `exec uvicorn` never receives it and the proxy's
+        # shutdown flush (commit+push of workspace edits) is silently skipped.
+        # Prepending `exec` forces the `sh -c` wrapper to replace itself with the
+        # script, which then `exec`s uvicorn into that same direct-child slot —
+        # so the proxy is the process `fserve` signals. See launch-notebook.sh.
         args=[
+            "exec",
             f"{_LAUNCH_BIN}/launch-notebook.sh",
             mode,
             notebook_path,

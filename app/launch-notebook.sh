@@ -25,9 +25,19 @@
 #      /__sg__/workspace/sync straight off the local /workspace directory.
 #
 # Pending workspace edits are committed and pushed before Knative idles the
-# pod by the proxy's FastAPI shutdown hook (uvicorn runs as PID 1 via `exec`
-# below, so it receives the Knative SIGTERM). A shell `trap` here would not
-# work — `exec` replaces this script, discarding its traps.
+# pod by the proxy's FastAPI shutdown hook, which fires on SIGTERM. For that to
+# work the proxy (uvicorn) must be the process Flyte's `fserve` wrapper signals.
+# `fserve` is PID 1; it runs this script via `Popen(cmd, shell=True)` and on
+# SIGTERM forwards the signal to that ONE direct child only (it does not signal
+# the whole tree). So uvicorn must end up as `fserve`'s direct child:
+#   - The AppEnvironment args prepend `exec` (see app/per_notebook.py), so the
+#     `sh -c` wrapper `fserve` spawns replaces itself with this script instead
+#     of lingering as an intermediate shell. (Debian's /bin/sh does not always
+#     exec-collapse a bare `sh -c "script"`; the explicit `exec` guarantees it.)
+#   - This script then `exec`s uvicorn below, so uvicorn inherits that same
+#     direct-child slot and receives the forwarded SIGTERM, running the flush.
+# An intermediate shell anywhere in this chain swallows SIGTERM and the flush is
+# silently skipped — losing unpushed edits at scale-to-zero.
 set -euo pipefail
 
 MODE="$1"
@@ -83,4 +93,16 @@ cd "${WORKSPACE_DIR}/${WORKSPACE_REL}" 2>/dev/null || true
 marimo "${MODE}" --sandbox "${NOTEBOOK_PATH}" \
   --port 8081 --host 127.0.0.1 --headless --no-token &
 
-exec uvicorn sg_proxy:asgi_app --host 0.0.0.0 --port 8080
+# `--timeout-graceful-shutdown` is required for the shutdown flush to run, not
+# just a tuning knob. On SIGTERM uvicorn drains open connections and in-flight
+# background tasks BEFORE firing the FastAPI `lifespan` shutdown (the commit+push
+# of workspace edits). The proxy holds a long-lived task to the local marimo
+# backend that does not drain on its own, so with the uvicorn default
+# (`timeout_graceful_shutdown=None`) the drain waits forever and the flush never
+# runs — verified empirically: the pod sat at "Waiting for background tasks to
+# complete" indefinitely, even after the browser tab closed. A bounded timeout
+# makes uvicorn cancel the lingering task and then still run `lifespan.shutdown`
+# (it only skips the flush on a *second* SIGTERM / force-quit). 15s leaves ample
+# room for the git push under the pod's 300s termination grace period.
+exec uvicorn sg_proxy:asgi_app --host 0.0.0.0 --port 8080 \
+  --timeout-graceful-shutdown 15

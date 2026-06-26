@@ -210,9 +210,12 @@ async def lifespan(_: FastAPI):
     """On shutdown (Knative SIGTERM at scale-to-zero), flush pending edits.
 
     `/workspace` is ephemeral, so anything not pushed before the pod idles is
-    lost. uvicorn runs as PID 1 (the launch script `exec`s it), so it receives
-    SIGTERM and runs this hook — unlike the launch script's shell trap, which
-    `exec` discards.
+    lost. Flyte's `fserve` wrapper is PID 1 and forwards the Knative SIGTERM to
+    its one direct child; the launch script's `exec` chain (args prepend `exec`,
+    then the script `exec`s uvicorn) makes uvicorn that direct child, so it
+    receives SIGTERM and runs this hook. See app/launch-notebook.sh — an
+    intermediate shell anywhere in that chain would swallow the signal and skip
+    this flush.
     """
     yield
     try:
