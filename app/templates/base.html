@@ -389,6 +389,18 @@
         /* Settings modal (native <dialog>): edit a workspace notebook's
            resources + description. Matches the tile/card surface language. */
         .settings-modal {
+            /* Center on the viewport. A native <dialog>:modal is centered by the
+               UA via `margin: auto`, but the `* { margin: 0 }` reset above is an
+               author rule that overrides it, leaving the dialog pinned top-left.
+               Restore the centering explicitly: inset:0 + margin:auto + a
+               fit-content height centers on both axes, and max-height keeps a
+               tall form scrollable on short viewports. */
+            position: fixed;
+            inset: 0;
+            margin: auto;
+            height: fit-content;
+            max-height: calc(100vh - 2rem);
+            overflow: auto;
             border: 1px solid var(--border-strong);
             border-radius: 12px;
             background: var(--surface);
