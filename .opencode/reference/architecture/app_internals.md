@@ -75,6 +75,10 @@ Each Workspace tile carries a **📸 snapshot** button (between the gear and tra
 
 **Deferred:** image-digest pinning and an inputs/outputs (CID) manifest. This cut freezes the notebook *source*, which is auditable; bit-for-bit re-run is a later phase. The publication path — a user PRs a fork snapshot into upstream, where it merges and then reaches every other fork on sync — is the GitHub-native flow, not a Stargazer route.
 
+## Copy to workspace
+
+**Copy is the reverse of freeze: a read-only source becomes editable.** Both the Workflows tiles (shipped, image-baked pipelines) and the Snapshots tiles (frozen records) carry a **Copy to workspace** button → `POST /workspace/copy` (`slug` + `section`). The route resolves the source — a Workflows notebook is read from the fork's *source tree* (`get_repo_file`, path derived by stripping `IMAGE_WORKDIR` off `Notebook.path_in_image`, e.g. `src/stargazer/notebooks/workflows/scrna_pipeline.py`); a snapshot is read from `notebooks/snapshots/` (`get_snapshot_notebook`) — then writes it under `notebooks/workspace/` via `create_workspace_notebook`, returning the rendered Workspace tile the browser drops before the New-notebook tile. The copy keeps the source's parsed `[tool.stargazer]` resources but gets its own `name`/`description` (from the workflow's registry title/blurb, or the snapshot's stored header) re-injected with `with_stargazer_resources`, so it tiles and launches like any user notebook. The target slug is derived from the source title (`_notebook_slug`); like `/workspace/create` it reuses the same collision rule — `get_workspace_notebook` returning non-None → **409**, so copy never clobbers an existing notebook (rename the existing one to copy again). Like every fork-backed write it requires the workspace opt-in (403 otherwise) — a Workflows tile shown to a not-yet-opted-in user surfaces that as an alert. Copy is a pure "add a notebook" action: no launch, no navigation.
+
 ## Admin Routes (full table)
 
 All on `app/admin_app.py` (`app_env`). Lifespan runs `init()` at startup. Post-fork GitHub ops go through `app/installation_tokens.py` (installation tokens), not the OAuth token.
@@ -89,6 +93,7 @@ All on `app/admin_app.py` (`app_env`). Lifespan runs `init()` at startup. Post-f
 | `/workspace/settings` | Rewrites a workspace notebook's `[tool.stargazer]` header (resources + description) |
 | `/workspace/delete` | Removes a workspace notebook (idempotent); deactivates any running pod for it |
 | `/workspace/snapshot` | *Moves* a workspace notebook into `notebooks/snapshots/` (frozen); tears down its pods |
+| `/workspace/copy` | *Copies* a Workflows or Snapshots notebook into `notebooks/workspace/` as an editable notebook (409 on name collision); returns the rendered tile |
 | `/launch` | Serves a per-notebook env (workspace/snapshot launches require opt-in) |
 | `/launch/status` | Reports active per-notebook apps so the dashboard hydrates running tiles to Open/Stop |
 | `/stop` | Deactivates a per-notebook app by name |

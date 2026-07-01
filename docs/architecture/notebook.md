@@ -47,6 +47,8 @@ flowchart LR
     W[Workspace notebook] -->|promote task| T[src/stargazer/tasks/]
     W -->|freeze 📸| S[Snapshots]
     W -->|graduate pipeline| P[notebooks/workflows/]
+    S -.->|copy| W
+    P -.->|copy| W
     T -->|PR| U[(upstream Stargazer)]
     S -->|PR| U
     P -->|PR| U
@@ -71,6 +73,10 @@ When an analysis reaches a publication-ready state, the 📸 button *moves* it o
 A workspace notebook that proves out a *reusable* pipeline — one others should run against new data — graduates into `notebooks/workflows/`. Graduation is the composite path: first its cell-defined tasks go through task promotion (above), so the heavy lifting lives in the tested SDK; then the notebook itself — now a thin, parameterized UI over SDK calls — is PR'd into `notebooks/workflows/` and registered as a dashboard tile in `app/notebooks.py`. It ships to everyone in the next image release. The scRNA-seq pipeline notebook is the template for what a graduated workflow looks like.
 
 Snapshot or graduate? A snapshot answers "what exactly did I run?" — frozen, run-only, valuable because it can't change. A graduated workflow answers "how does anyone run this on their data?" — parameterized, maintained, expected to evolve with the SDK.
+
+### Copy to workspace — read-only source → editable notebook
+
+The reverse of freeze: a **Copy to workspace** button on every Workflows and Snapshots tile drops an editable copy into the Workspace, so a shipped pipeline or a frozen analysis becomes a starting point to iterate on rather than just run. The original is untouched — the copy is a fresh notebook under `notebooks/workspace/`, free to edit, re-freeze, or graduate. It takes the source's name, so if a notebook by that name already exists the copy is refused; rename the existing one and copy again. Mechanics in [App → Snapshots](app.md#snapshots) and `.opencode/reference/architecture/app_internals.md`.
 
 ## The SDK Loop
 

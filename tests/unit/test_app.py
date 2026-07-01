@@ -1534,3 +1534,218 @@ def test_snapshot_tears_down_pod_deployment(secret_env, client, monkeypatch):
     assert resp.status_code == 200
     assert sorted(deactivated) == ["nb-my-analysis-edit", "nb-my-analysis-run"]
     assert sorted(deleted_apps) == ["nb-my-analysis-edit", "nb-my-analysis-run"]
+
+
+# ---------------------------------------------------------------------------
+# /workspace/copy — copy a workflow or snapshot into the editable workspace
+# ---------------------------------------------------------------------------
+
+
+def test_copy_requires_session(secret_env, client):
+    """Unauthenticated copy is rejected with 401."""
+    resp = client.post(
+        "/workspace/copy", data={"slug": "scrna-pipeline", "section": "workflows"}
+    )
+    assert resp.status_code == 401
+
+
+def test_copy_requires_optin(secret_env, client):
+    """Copy without workspace saving enabled is rejected with 403."""
+    _auth(client)  # logged in, not opted in
+    resp = client.post(
+        "/workspace/copy", data={"slug": "scrna-pipeline", "section": "workflows"}
+    )
+    assert resp.status_code == 403
+
+
+def test_copy_rejects_uncopyable_section(secret_env, client):
+    """Copy only accepts workflows/snapshots sources — tutorials is rejected."""
+    _auth(client, fork_full_name="octocat/stargazer", access_token="tok")
+    resp = client.post(
+        "/workspace/copy", data={"slug": "assets", "section": "tutorials"}
+    )
+    assert resp.status_code == 400
+
+
+def test_copy_unknown_workflow_is_404(secret_env, client, monkeypatch):
+    """A workflow slug that isn't a registered workflow notebook returns 404."""
+    _stub_fork_token(monkeypatch)
+    _auth(client, fork_full_name="octocat/stargazer", access_token="tok")
+    resp = client.post(
+        "/workspace/copy",
+        data={"slug": "ghost", "section": "workflows"},
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 404
+
+
+def test_copy_workflow_writes_editable_workspace_notebook(
+    secret_env, client, monkeypatch
+):
+    """Copying a workflow reads it from the fork's source tree and writes it
+    into notebooks/workspace/ as an editable notebook keyed by its title.
+
+    The new notebook carries the workflow's display title in its
+    `[tool.stargazer]` header and gets the source's parsed resources; the write
+    uses the fork-scoped installation token. The returned tile is a normal
+    workspace tile (gear + launch forms).
+    """
+    src = (
+        '# /// script\n# dependencies = ["marimo"]\n'
+        '#\n# [tool.stargazer]\n# cpu = 2\n# memory = "4Gi"\n# ///\nimport marimo\n'
+    )
+    fetched: dict = {}
+    written: dict = {}
+
+    async def fake_repo_file(repo, token, path):
+        fetched.update(repo=repo, token=token, path=path)
+        return src
+
+    async def fake_ws_fetch(_repo, _token, _filename):
+        return None  # no collision on the target name
+
+    async def fake_create(repo, token, filename, content, message=None):
+        written.update(filename=filename, content=content, token=token)
+        return {}
+
+    monkeypatch.setattr("app.admin_app.get_repo_file", fake_repo_file)
+    monkeypatch.setattr("app.admin_app.get_workspace_notebook", fake_ws_fetch)
+    monkeypatch.setattr("app.admin_app.create_workspace_notebook", fake_create)
+    token = _stub_fork_token(monkeypatch)
+
+    _auth(client, fork_full_name="octocat/stargazer", access_token="tok")
+    resp = client.post(
+        "/workspace/copy",
+        data={"slug": "scrna-pipeline", "section": "workflows"},
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # Read from the fork's repo tree (image-workdir prefix stripped).
+    assert fetched["path"] == "src/stargazer/notebooks/workflows/scrna_pipeline.py"
+    assert fetched["token"] == token
+    # Title "scRNA-seq" drives the new slug; the write uses the install token.
+    assert body["slug"] == "scrna-seq"
+    assert written["filename"] == "scrna-seq.py"
+    assert written["token"] == token
+    # The copy is a real workspace tile (editable), not a frozen one.
+    assert 'name="slug" value="scrna-seq"' in body["tile_html"]
+    assert "tile-settings" in body["tile_html"]
+
+    from app.notebook_meta import (
+        NotebookResources,
+        parse_notebook_name,
+        parse_notebook_resources,
+    )
+
+    assert parse_notebook_resources(written["content"]) == NotebookResources(
+        cpu=2, memory="4Gi"
+    )
+    assert parse_notebook_name(written["content"]) == "scRNA-seq"
+
+
+def test_copy_conflict_when_notebook_exists(secret_env, client, monkeypatch):
+    """Copying onto a name already in the workspace is rejected with 409.
+
+    Copy reuses create's collision rule — the derived slug must be free, else
+    the user renames the existing notebook and copies again.
+    """
+    src = '# /// script\n# dependencies = ["marimo"]\n# ///\nimport marimo\n'
+
+    async def fake_repo_file(_repo, _token, _path):
+        return src
+
+    async def fake_ws_fetch(_repo, _token, _filename):
+        return "# existing notebook\n"  # the derived slug is already taken
+
+    monkeypatch.setattr("app.admin_app.get_repo_file", fake_repo_file)
+    monkeypatch.setattr("app.admin_app.get_workspace_notebook", fake_ws_fetch)
+    _stub_fork_token(monkeypatch)
+
+    _auth(client, fork_full_name="octocat/stargazer", access_token="tok")
+    resp = client.post(
+        "/workspace/copy",
+        data={"slug": "scrna-pipeline", "section": "workflows"},
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 409
+
+
+def test_copy_snapshot_writes_editable_workspace_notebook(
+    secret_env, client, monkeypatch
+):
+    """Copying a snapshot reads it from snapshots/ and writes it editable.
+
+    The snapshot's own `[tool.stargazer]` name/description/resources carry over
+    onto the new workspace notebook.
+    """
+    src = (
+        '# /// script\n# dependencies = ["marimo"]\n'
+        "#\n# [tool.stargazer]\n"
+        '# name = "My Saved Run"\n# cpu = 1\n# memory = "2Gi"\n'
+        '# description = "A frozen analysis"\n# ///\nimport marimo\n'
+    )
+    fetched: dict = {}
+    written: dict = {}
+
+    async def fake_snapshot_fetch(repo, token, filename):
+        fetched.update(repo=repo, token=token, filename=filename)
+        return src
+
+    async def fake_ws_fetch(_repo, _token, _filename):
+        return None  # no collision on the target name
+
+    async def fake_create(_repo, _token, filename, content, message=None):
+        written.update(filename=filename, content=content)
+        return {}
+
+    monkeypatch.setattr("app.admin_app.get_snapshot_notebook", fake_snapshot_fetch)
+    monkeypatch.setattr("app.admin_app.get_workspace_notebook", fake_ws_fetch)
+    monkeypatch.setattr("app.admin_app.create_workspace_notebook", fake_create)
+    _stub_fork_token(monkeypatch)
+
+    _auth(client, fork_full_name="octocat/stargazer", access_token="tok")
+    resp = client.post(
+        "/workspace/copy",
+        data={"slug": "my-analysis", "section": "snapshots"},
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert fetched["filename"] == "my-analysis.py"
+    # The new slug comes from the snapshot's stored display name.
+    assert body["slug"] == "my-saved-run"
+    assert written["filename"] == "my-saved-run.py"
+
+    from app.notebook_meta import (
+        NotebookResources,
+        parse_notebook_description,
+        parse_notebook_name,
+        parse_notebook_resources,
+    )
+
+    assert parse_notebook_name(written["content"]) == "My Saved Run"
+    assert parse_notebook_description(written["content"]) == "A frozen analysis"
+    assert parse_notebook_resources(written["content"]) == NotebookResources(
+        cpu=1, memory="2Gi"
+    )
+
+
+def test_copy_missing_snapshot_source_is_404(secret_env, client, monkeypatch):
+    """Copying a snapshot absent from the fork returns 404."""
+
+    async def fake_snapshot_fetch(_repo, _token, _filename):
+        return None
+
+    monkeypatch.setattr("app.admin_app.get_snapshot_notebook", fake_snapshot_fetch)
+    _stub_fork_token(monkeypatch)
+
+    _auth(client, fork_full_name="octocat/stargazer", access_token="tok")
+    resp = client.post(
+        "/workspace/copy",
+        data={"slug": "ghost", "section": "snapshots"},
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 404

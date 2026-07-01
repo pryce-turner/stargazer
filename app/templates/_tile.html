@@ -45,6 +45,13 @@
                 <button class="btn btn-github" type="submit">Run</button>
             </form>
         </div>
+        <div class="launch-row">
+            <button type="button" class="btn btn-muted"
+                    data-copy-slug="{{ tile.slug }}" data-copy-section="snapshots"
+                    title="Copy into your workspace as an editable notebook">
+                Copy to workspace
+            </button>
+        </div>
     </div>
     {% else %}
     <div class="tile-actions">
@@ -64,6 +71,15 @@
                 <button class="btn btn-github" type="submit">Run</button>
             </form>
         </div>
+        {% if tile.section == 'workflows' %}
+        <div class="launch-row">
+            <button type="button" class="btn btn-muted"
+                    data-copy-slug="{{ tile.slug }}" data-copy-section="workflows"
+                    title="Copy into your workspace as an editable notebook">
+                Copy to workspace
+            </button>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 </div>

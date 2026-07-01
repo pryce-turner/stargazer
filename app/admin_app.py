@@ -72,6 +72,7 @@ from app.github import (
     delete_workspace_notebook,
     find_existing_fork,
     fork_upstream,
+    get_repo_file,
     get_snapshot_notebook,
     get_workspace_notebook,
     is_genuine_fork,
@@ -91,6 +92,7 @@ from app.notebook_meta import (
 )
 from app.init import init
 from app.notebooks import (
+    IMAGE_WORKDIR,
     NOTEBOOKS,
     SEED_SLUGS,
     SNAPSHOT_NOTEBOOK_DIR,
@@ -818,6 +820,101 @@ async def workspace_create(
     )
     tile_html = templates.env.get_template("_tile.html").render(tile=tile)
     return JSONResponse({"slug": slug, "tile_html": tile_html})
+
+
+@asgi_app.post("/workspace/copy")
+async def workspace_copy(
+    request: Request,
+    slug: str = Form(...),
+    section: str = Form(...),
+):
+    """Copy a Workflows or Snapshots notebook into the user's workspace.
+
+    Reads the source — a shipped Workflows notebook from the fork's source tree
+    (`src/stargazer/notebooks/workflows/`), or a frozen snapshot from
+    `notebooks/snapshots/` — and writes it as a fresh, editable notebook under
+    `notebooks/workspace/`. The copy keeps the source's `[tool.stargazer]`
+    resources but gets its own name/description so it tiles like any other
+    workspace notebook. The target slug is derived from the source title; like
+    `/workspace/create` it fails with 409 if that name is already taken (rename
+    the existing notebook to copy again). Returns the rendered Workspace tile
+    for the dashboard to drop straight into the grid.
+    """
+    session = _get_session(request)
+    if session is None:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    if not session.workspace_enabled:
+        return JSONResponse({"error": "enable workspace saving first"}, status_code=403)
+    if section not in ("workflows", "snapshots"):
+        return JSONResponse(
+            {"error": f"cannot copy from section: {section}"}, status_code=400
+        )
+
+    repo = session.fork_full_name
+    try:
+        token = await installation_tokens.fork_token(repo)
+        # Resolve the source text and the title/description the copy defaults to.
+        if section == "snapshots":
+            if _notebook_slug(slug) != slug:
+                return JSONResponse(
+                    {"error": f"invalid notebook: {slug!r}"}, status_code=400
+                )
+            source = await get_snapshot_notebook(repo, token, f"{slug}.py")
+            default_title = parse_notebook_name(source or "") or _display_name(
+                f"{slug}.py"
+            )
+            default_desc = parse_notebook_description(source or "")
+        else:
+            nb = by_slug(slug)
+            if nb is None or nb.section != "workflows":
+                return JSONResponse(
+                    {"error": f"unknown workflow: {slug}"}, status_code=404
+                )
+            repo_path = nb.path_in_image.removeprefix(f"{IMAGE_WORKDIR}/")
+            source = await get_repo_file(repo, token, repo_path)
+            default_title, default_desc = nb.title, nb.description
+        if source is None:
+            return JSONResponse(
+                {"error": f"source notebook not found: {slug}"}, status_code=404
+            )
+
+        target_slug = _notebook_slug(default_title)
+        if target_slug is None:
+            return JSONResponse(
+                {"error": f"could not derive a notebook name from {default_title!r}"},
+                status_code=400,
+            )
+        filename = f"{target_slug}.py"
+        # Same collision rule as create: refuse to clobber an existing notebook.
+        if await get_workspace_notebook(repo, token, filename) is not None:
+            return JSONResponse(
+                {"error": f"notebook already exists: {filename}"}, status_code=409
+            )
+
+        resources = parse_notebook_resources(source)
+        content = with_stargazer_resources(
+            source, resources, description=default_desc or None, name=default_title
+        )
+        await create_workspace_notebook(
+            repo,
+            token,
+            filename,
+            content,
+            message=f"workspace: copy {target_slug} from {section}",
+        )
+    except Exception as exc:
+        logger.error(f"Notebook copy failed for {slug!r} from {section}: {exc}")
+        return JSONResponse({"error": f"copy failed: {exc}"}, status_code=502)
+
+    tile = _workspace_tile_dict(
+        target_slug,
+        resources.cpu,
+        memory_to_gib(resources.memory),
+        default_desc,
+        name=default_title,
+    )
+    tile_html = templates.env.get_template("_tile.html").render(tile=tile)
+    return JSONResponse({"slug": target_slug, "tile_html": tile_html})
 
 
 @asgi_app.post("/workspace/settings")

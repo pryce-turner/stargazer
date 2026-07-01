@@ -200,12 +200,17 @@ async def list_snapshots(fork_full_name: str, access_token: str) -> list[str]:
     )
 
 
-async def _get_file(fork_full_name: str, access_token: str, path: str) -> str | None:
-    """Fetch a file's decoded UTF-8 source from the fork's `WORKSPACE_BRANCH`.
+async def get_repo_file(
+    fork_full_name: str, access_token: str, path: str
+) -> str | None:
+    """Fetch any repo file's decoded UTF-8 source from the fork's `WORKSPACE_BRANCH`.
 
-    Shared by `get_workspace_notebook` and `get_snapshot_notebook`. Returns
-    None if the file is absent (404); other transport errors propagate so
-    callers can fall back to defaults.
+    The generic reader `path` is the full repo-relative path. The
+    `get_workspace_notebook` / `get_snapshot_notebook` wrappers prefix their
+    directory; `/workspace/copy` calls this directly to pull a shipped Workflows
+    notebook out of the fork's source tree (under `src/stargazer/notebooks/`).
+    Returns None if the file is absent (404); other transport errors propagate
+    so callers can fall back to defaults.
     """
     url = f"{GITHUB_API_BASE}/repos/{fork_full_name}/contents/{path}"
     async with aiohttp.ClientSession() as session:
@@ -229,7 +234,7 @@ async def get_workspace_notebook(
     read a notebook's `[tool.stargazer]` resource block before serving the
     pod, and by `/workspace/create` for collision + seed lookups.
     """
-    return await _get_file(
+    return await get_repo_file(
         fork_full_name, access_token, f"{WORKSPACE_CONTENTS_PATH}/{filename}"
     )
 
@@ -243,7 +248,7 @@ async def get_snapshot_notebook(
     `/launch` to read a snapshot's `[tool.stargazer]` resources before serving
     its read-only run pod. Returns the decoded source, or None if absent.
     """
-    return await _get_file(
+    return await get_repo_file(
         fork_full_name, access_token, f"{SNAPSHOTS_CONTENTS_PATH}/{filename}"
     )
 

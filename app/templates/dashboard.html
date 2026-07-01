@@ -560,6 +560,46 @@
         deleteSnapshot(btn);
     });
 
+    // Copy a Workflows or Snapshots notebook into the editable Workspace. POST,
+    // then drop the returned workspace tile in before the New-notebook tile.
+    // Delegated so it covers freshly created snapshot tiles too.
+    async function copyToWorkspace(btn) {
+        const slug = btn.dataset.copySlug;
+        const section = btn.dataset.copySection;
+        const restore = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-inline"></span>';
+        try {
+            const resp = await fetch("/workspace/copy", {
+                method: "POST",
+                body: new URLSearchParams({ slug, section }),
+                headers: { Accept: "application/json" },
+            });
+            const payload = await resp.json().catch(() => ({}));
+            if (!resp.ok)
+                throw new Error(payload.error || "HTTP " + resp.status);
+            const createTile = document.getElementById("create-tile");
+            if (createTile && payload.tile_html)
+                createTile.insertAdjacentHTML("beforebegin", payload.tile_html);
+            btn.innerHTML = "✓ Copied";
+            setTimeout(() => {
+                btn.innerHTML = restore;
+                btn.disabled = false;
+            }, 1500);
+        } catch (err) {
+            btn.innerHTML = restore;
+            btn.disabled = false;
+            alert("Copy failed: " + err.message);
+        }
+    }
+
+    document.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-copy-slug]");
+        if (!btn) return;
+        e.preventDefault();
+        copyToWorkspace(btn);
+    });
+
     // Edit a workspace notebook's resources + description via the gear → modal.
     // The gear carries the current values as data-*; Save POSTs them and
     // refreshes the tile blurb + the gear's data-* in place — no reload.
