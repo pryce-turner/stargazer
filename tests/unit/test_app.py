@@ -661,7 +661,15 @@ def test_launch_status_reports_only_active_apps(secret_env, client, monkeypatch)
     resp = client.get("/launch/status", headers={"Accept": "application/json"})
     assert resp.status_code == 200
     running = resp.json()["running"]
-    assert running == [{"slug": "assets", "mode": "edit", "url": "http://nb.example"}]
+    assert len(running) == 1
+    (entry,) = running
+    assert entry["slug"] == "assets"
+    assert entry["mode"] == "edit"
+    # The endpoint carries a one-shot `sg_launch` handoff token (the session
+    # cookie) so the hydrated tile's Open can mint the notebook's host-only
+    # cookie, same as a fresh /launch.
+    assert entry["url"].startswith("http://nb.example?sg_launch=")
+    assert entry["url"].split("sg_launch=", 1)[1]  # non-empty token
 
 
 def test_launch_status_skips_inactive_apps(secret_env, client, monkeypatch):
@@ -999,9 +1007,13 @@ def test_launch_snapshot_run_serves_from_snapshots_dir(secret_env, client, monke
     assert resp.status_code == 200
 
     served = sink["env"]
+    # args = ["exec", launch-notebook.sh, <mode>, <notebook_path>] — the `exec`
+    # prefix makes uvicorn fserve's direct child so SIGTERM reaches the flush.
     # run mode, frozen file resolved under the snapshots dir.
-    assert served.args[1] == "run"
-    assert served.args[2].endswith("notebooks/snapshots/frozen.py")
+    assert served.args[0] == "exec"
+    assert served.args[1].endswith("launch-notebook.sh")
+    assert served.args[2] == "run"
+    assert served.args[3].endswith("notebooks/snapshots/frozen.py")
     assert served.resources.cpu == 2
     assert served.resources.memory == "3Gi"
 

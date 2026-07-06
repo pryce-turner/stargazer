@@ -249,7 +249,7 @@
     // Edit/Run button. The original button stays so the notebook can be
     // re-launched; the extras are tagged `.launched-extra` so a re-launch or
     // a Stop can clear them without disturbing the form.
-    function showLaunched(row, form, url) {
+    function showLaunched(row, form, url, fresh) {
         row.querySelectorAll(".launched-extra").forEach((el) => el.remove());
 
         // A notebook runs in exactly one modality at a time. Hide this row's own
@@ -274,6 +274,24 @@
             mode === "run" ? "Open: Run Mode" : "Open: Edit Mode";
         open.target = "_blank";
         open.rel = "noopener";
+        // A `fresh` URL just came back from /launch, so its pod is serving with
+        // the admin's *current* SESSION_SECRET and will accept the handoff
+        // token — a direct link is safe. A hydrated URL (from /launch/status on
+        // load) can point at a pod that's scaled to zero or stale: baked with a
+        // pre-redeploy secret/image, it would reject the current session's token
+        // and 401 ("Unauthorized"). Re-serve through /launch on click to
+        // reconcile that pod to the current spec (a no-op for a warm, current
+        // pod) and hand off a token it will accept, then navigate. The tab is
+        // opened synchronously in the click handler so the re-serve's await
+        // can't cost us the user-gesture and trip the popup blocker.
+        if (!fresh) {
+            open.addEventListener("click", (e) => {
+                e.preventDefault();
+                const win = window.open("", "_blank");
+                if (win) win.opener = null;
+                reopenHydrated(open, form, win);
+            });
+        }
 
         const stop = document.createElement("button");
         stop.type = "button";
@@ -295,6 +313,50 @@
             save.title = "Commit this notebook to your fork";
             save.addEventListener("click", () => saveNotebook(save, form));
             row.appendChild(save);
+        }
+    }
+
+    // Paint a "starting" placeholder into a freshly-opened blank tab so a cold
+    // start reads as intentional (not a broken about:blank) until we navigate it.
+    function paintStartingTab(win) {
+        if (!win) return;
+        win.document.write(
+            "<!doctype html><meta charset='utf-8'><title>Starting notebook…</title>" +
+                "<body style='margin:0;height:100vh;display:grid;place-items:center;" +
+                "font:16px/1.5 system-ui,sans-serif;color:#555;background:#fafafa'>" +
+                "<div style='text-align:center'>Starting your notebook…<br>" +
+                "<small style='color:#999'>This can take a minute on a cold start.</small>" +
+                "</div></body>",
+        );
+        win.document.close();
+    }
+
+    // Re-open a hydrated (possibly scaled-to-zero or stale) notebook: re-serve
+    // it through /launch so the pod is reconciled to the current spec — current
+    // SESSION_SECRET and `:latest` image — then point the pre-opened tab at the
+    // fresh handoff URL once the pod is ready. `win` is opened synchronously by
+    // the caller to survive the awaits without popup-blocking, shows a "starting"
+    // placeholder while the pod comes up, and is navigated on success / closed on
+    // failure. Re-serve is a no-op for a warm, current pod, so this stays quick
+    // unless the pod actually needs a cold start.
+    async function reopenHydrated(openBtn, form, win) {
+        paintStartingTab(win);
+        const label = openBtn.textContent;
+        openBtn.style.pointerEvents = "none";
+        openBtn.textContent = "Starting…";
+        try {
+            const url = await requestLaunch(new FormData(form));
+            const ready = await pollReady(url, Date.now() + 180000);
+            if (!ready)
+                throw new Error("timed out waiting for notebook to start");
+            if (win) win.location = url;
+            else window.open(url, "_blank", "noopener");
+        } catch (err) {
+            if (win) win.close();
+            alert("Open failed: " + err.message);
+        } finally {
+            openBtn.textContent = label;
+            openBtn.style.pointerEvents = "";
         }
     }
 
@@ -418,7 +480,7 @@
                 throw new Error("timed out waiting for notebook to start");
             button.disabled = false;
             button.textContent = originalLabel;
-            showLaunched(row, form, url);
+            showLaunched(row, form, url, true);
         } catch (err) {
             button.textContent = originalLabel;
             button.disabled = false;
@@ -701,7 +763,8 @@
         }
         for (const { slug, mode, url } of data.running || []) {
             const form = findLaunchForm(slug, mode);
-            if (form) showLaunched(form.closest(".launch-row"), form, url);
+            if (form)
+                showLaunched(form.closest(".launch-row"), form, url, false);
         }
     }
 

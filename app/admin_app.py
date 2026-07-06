@@ -1298,7 +1298,17 @@ async def launch_status(request: Request):
         except Exception:
             return None  # not found / not deployed
         if app.is_active() and app.endpoint:
-            return {"slug": slug, "mode": mode, "url": app.endpoint}
+            # Hand off the session as a one-shot `sg_launch` token, same as
+            # `/launch`. The notebook lives on a sibling subdomain with a
+            # host-only cookie the admin can't set directly, so a bare endpoint
+            # URL 401s unless the browser already holds that subdomain's cookie
+            # (expired, other device, or never launched fresh this session).
+            # The token lets the proxy mint the cookie on first hit.
+            return {
+                "slug": slug,
+                "mode": mode,
+                "url": f"{app.endpoint}?sg_launch={cookie_value}",
+            }
         return None
 
     probes = [_probe(slug, mode) for slug in slugs for mode in ("edit", "run")]
