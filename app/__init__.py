@@ -18,10 +18,11 @@ Two-app architecture:
   are working copies. No PVC — Flyte v2 doesn't yet support pod
   templates on AppEnvironments.
 
-Plus supporting modules: `oauth`, `github`, `notebooks`, `proxy`,
-`session`, `templates`, `provision`, `init`. Lives outside
-`src/stargazer` because it is deployment glue, not part of the
-bioinformatics SDK.
+Plus supporting modules: `oauth`, `github`, `installation_tokens`,
+`http_client` (the shared pooled HTTP client every outbound admin call
+rides), `notebooks`, `notebook_meta`, `assets`, `proxy`, `session`,
+`templates`, `provision`, `init`. Lives outside `src/stargazer` because
+it is deployment glue, not part of the bioinformatics SDK.
 
 spec: [docs/architecture/app.md](../docs/architecture/app.md)
 """

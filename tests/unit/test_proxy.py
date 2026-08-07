@@ -1,16 +1,23 @@
-"""Tests for the per-notebook proxy's callback-fetch git token (`app.proxy`).
+"""Tests for the per-notebook proxy (`app.proxy`).
 
 The proxy is baked into the notebook image as a standalone module; here we
-import it directly and exercise `_fetch_pod_git_token`, which exchanges the
-`SG_POD_TOKEN` capability for a fresh fork-scoped token at push time. The
-GitHub/admin round-trip is faked via `httpx.post`.
+import it directly and exercise `_fetch_pod_git_token` (which exchanges the
+`SG_POD_TOKEN` capability for a fresh fork-scoped token at push time — the
+GitHub/admin round-trip is faked via `httpx.post`) plus the forwarding path
+itself: cookie gating, terminal-overlay injection into HTML, streaming
+passthrough for everything else, and raw query-string preservation. The
+upstream marimo server is faked with an `httpx.MockTransport` installed as
+the proxy's shared upstream client.
 """
 
 from types import SimpleNamespace
 
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+
 from app import proxy
 from app.session import SessionData, create_session_cookie
-
 
 # ---------------------------------------------------------------------------
 # Encrypted session cookie — the proxy must validate what the admin issues
@@ -40,6 +47,22 @@ def test_proxy_rejects_tampered_or_foreign_cookie(monkeypatch):
 def test_proxy_denies_when_secret_missing(monkeypatch):
     """No SESSION_SECRET in the pod env → deny everything."""
     monkeypatch.delenv("SESSION_SECRET", raising=False)
+    assert proxy._cookie_is_valid("anything") is False
+
+
+def test_proxy_cookie_check_fails_closed_on_unexpected_error(monkeypatch):
+    """An unexpected exception in the auth gate denies (401), never 500s.
+
+    This is a security gate: any failure mode must fall through to False. A
+    narrow `except` tuple would let a surprise exception escape the middleware
+    and surface as a 500 from the notebook pod instead of a clean deny.
+    """
+    monkeypatch.setenv("SESSION_SECRET", "shared-session-secret")
+
+    def boom(_secret):
+        raise MemoryError("not a ValueError/TypeError/InvalidToken")
+
+    monkeypatch.setattr(proxy, "_fernet", boom)
     assert proxy._cookie_is_valid("anything") is False
 
 
@@ -143,3 +166,119 @@ def test_term_injection_targets_body_close():
     assert b"sg-term-overlay" in injected
     # Injection lands inside the body, before its close tag.
     assert injected.index(b"sg-term-overlay") < injected.index(b"</body>")
+
+
+# ---------------------------------------------------------------------------
+# Forwarding path — cookie gate, HTML injection, streaming, query passthrough
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def upstream(monkeypatch):
+    """Fake the marimo upstream behind the proxy's shared client.
+
+    Installs an `httpx.MockTransport`-backed client as `proxy._upstream` and
+    returns a `configure(handler)` callable plus a recorder capturing the last
+    upstream request (`method`/`url`/`raw query`).
+    """
+    recorder: dict = {}
+
+    def configure(respond):
+        def handler(request: httpx.Request) -> httpx.Response:
+            recorder["method"] = request.method
+            recorder["url"] = str(request.url)
+            recorder["query"] = request.url.query.decode()
+            return respond(request)
+
+        monkeypatch.setattr(
+            proxy,
+            "_upstream",
+            httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        return recorder
+
+    return configure
+
+
+@pytest.fixture
+def authed_client(monkeypatch):
+    """A TestClient (no lifespan) holding a valid admin-issued session cookie."""
+    secret = "shared-session-secret"
+    monkeypatch.setenv("SESSION_SECRET", secret)
+    client = TestClient(proxy.asgi_app)
+    cookie = create_session_cookie(SessionData("octocat", 1), secret)
+    client.cookies.set(proxy.SESSION_COOKIE, cookie)
+    return client
+
+
+def test_proxy_401s_without_cookie(monkeypatch, upstream):
+    """No session cookie → 401, and the request never reaches marimo."""
+    monkeypatch.setenv("SESSION_SECRET", "shared-session-secret")
+    recorder = upstream(lambda req: httpx.Response(200, text="never"))
+    client = TestClient(proxy.asgi_app)
+
+    resp = client.get("/anything")
+
+    assert resp.status_code == 401
+    assert "url" not in recorder  # upstream untouched
+
+
+def test_proxy_injects_terminal_into_html(authed_client, upstream):
+    """HTML responses get the terminal overlay spliced in before </body>."""
+    upstream(
+        lambda req: httpx.Response(
+            200,
+            content=b"<html><body><div id='app'></div></body></html>",
+            headers={"content-type": "text/html; charset=utf-8"},
+        )
+    )
+
+    resp = authed_client.get("/")
+
+    assert resp.status_code == 200
+    assert b"sg-term-overlay" in resp.content
+    assert resp.content.index(b"sg-term-overlay") < resp.content.index(b"</body>")
+
+
+def test_proxy_streams_non_html_untouched(authed_client, upstream):
+    """Non-HTML bodies pass through byte-for-byte with their content type."""
+    payload = bytes(range(256)) * 64  # binary, overlay must not touch it
+    upstream(
+        lambda req: httpx.Response(
+            200,
+            content=payload,
+            headers={"content-type": "application/octet-stream"},
+        )
+    )
+
+    resp = authed_client.get("/assets/bundle.bin")
+
+    assert resp.status_code == 200
+    assert resp.content == payload
+    assert b"sg-term-overlay" not in resp.content
+
+
+def test_proxy_preserves_raw_query_string(authed_client, upstream):
+    """Duplicate query params reach marimo intact (no dict collapse)."""
+    recorder = upstream(lambda req: httpx.Response(200, text="ok"))
+
+    resp = authed_client.get("/api/kernel?file=a.py&tag=x&tag=y")
+
+    assert resp.status_code == 200
+    assert recorder["query"] == "file=a.py&tag=x&tag=y"
+    assert recorder["url"].endswith("/api/kernel?file=a.py&tag=x&tag=y")
+
+
+def test_proxy_forwards_method_and_body(authed_client, upstream):
+    """POST bodies stream through to marimo with the method intact."""
+
+    def respond(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"echo": req.content.decode()})
+
+    recorder = upstream(respond)
+
+    resp = authed_client.post("/api/run", content=b'{"cell": 1}')
+
+    assert resp.status_code == 200
+    assert recorder["method"] == "POST"
+    assert resp.json() == {"echo": '{"cell": 1}'}

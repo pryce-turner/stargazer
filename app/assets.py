@@ -16,10 +16,11 @@ sign minting always requires a session.
 spec: [docs/architecture/app.md](../docs/architecture/app.md)
 """
 
+import asyncio
 import dataclasses
 import os
 import time
-from typing import Optional, get_type_hints
+from typing import get_type_hints
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -48,8 +49,11 @@ PUBLIC_CACHE_TTL = 60.0
 PUBLIC_FALLBACK_GATEWAY = "https://dweb.link"
 
 # Module attributes resolved at call time so tests can swap in fakes.
-_pinata_client: Optional[PinataClient] = None
-_public_cache: Optional[tuple[float, list[dict]]] = None
+_pinata_client: PinataClient | None = None
+_public_cache: tuple[float, list[dict]] | None = None
+# Single-flight guard for cache refreshes: concurrent anonymous requests on a
+# cold/expired cache would otherwise each fan out their own Pinata listing.
+_public_cache_lock = asyncio.Lock()
 
 
 def _pinata() -> PinataClient:
@@ -83,11 +87,26 @@ def _require_pinata() -> None:
 
 
 async def _public_records() -> list[dict]:
-    """The cached full public listing, refreshed when older than the TTL."""
+    """The cached full public listing, refreshed when older than the TTL.
+
+    Refresh is single-flight: the lock is only contended on a cold/expired
+    cache, and the double-check inside it means concurrent misses share one
+    Pinata listing instead of each issuing their own.
+    """
     global _public_cache
-    now = time.monotonic()
-    if _public_cache is None or now - _public_cache[0] > PUBLIC_CACHE_TTL:
-        _public_cache = (now, await _pinata().query({}, network="public"))
+
+    def _fresh() -> bool:
+        """Whether the cache exists and is within its TTL."""
+        return (
+            _public_cache is not None
+            and time.monotonic() - _public_cache[0] <= PUBLIC_CACHE_TTL
+        )
+
+    if not _fresh():
+        async with _public_cache_lock:
+            if not _fresh():
+                records = await _pinata().query({}, network="public")
+                _public_cache = (time.monotonic(), records)
     return _public_cache[1]
 
 

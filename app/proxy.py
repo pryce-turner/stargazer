@@ -72,10 +72,10 @@ from urllib.parse import urlencode
 
 import httpx
 import websockets
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet
 from fastapi import FastAPI, Request, Response, WebSocket
-from fastapi.responses import JSONResponse, RedirectResponse
-
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from starlette.background import BackgroundTask
 
 SESSION_COOKIE = "sg_session"
 SESSION_MAX_AGE = 60 * 60 * 24 * 30  # 30 days, matches app.session
@@ -101,6 +101,22 @@ _TERM_SECRET_SUFFIXES = ("_SECRET", "_TOKEN", "_JWT", "_KEY", "_PASSWORD")
 # fit addon load from CDN (browser-side, no pod dep); the overlay talks to the
 # /__sg__/term PTY websocket. Self-contained — no marimo plugin needed.
 _TERM_INJECTION = (Path(__file__).parent / "terminal_overlay.html").read_bytes()
+
+# One shared client with keep-alive to the loopback marimo server, reused for
+# every proxied request and readiness probe — a per-request client would pay
+# construction plus a fresh TCP connection on the hottest path in the pod.
+# Lazily created (import must stay side-effect-free for tests), closed by the
+# lifespan hook at shutdown. Timeout is per-request: unbounded for proxied
+# traffic (marimo holds long-poll connections), short for readiness probes.
+_upstream: httpx.AsyncClient | None = None
+
+
+def _upstream_client() -> httpx.AsyncClient:
+    """The shared keep-alive client for the local marimo backend."""
+    global _upstream
+    if _upstream is None:
+        _upstream = httpx.AsyncClient(timeout=None)
+    return _upstream
 
 
 def _fetch_pod_git_token() -> str | None:
@@ -223,6 +239,10 @@ async def lifespan(_: FastAPI):
         print(f"[sg] workspace shutdown sync: {payload}")
     except Exception as exc:  # never block shutdown
         print(f"[sg] workspace shutdown sync failed: {exc}")
+    global _upstream
+    if _upstream is not None:
+        await _upstream.aclose()
+        _upstream = None
 
 
 asgi_app = FastAPI(
@@ -270,7 +290,9 @@ def _cookie_is_valid(cookie_value: str | None) -> bool:
     try:
         _fernet(secret).decrypt(cookie_value.encode("ascii"), ttl=SESSION_MAX_AGE)
         return True
-    except (InvalidToken, Exception):
+    except Exception:
+        # Deny on *any* failure — this is an auth gate, so an unexpected
+        # exception must fail closed (401), never propagate as a 500.
         return False
 
 
@@ -337,8 +359,9 @@ async def ready() -> Response:
     """
     headers = {"Access-Control-Allow-Origin": "*"}
     try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            resp = await client.get(f"http://{MARIMO_HOST}:{MARIMO_HTTP_PORT}/")
+        resp = await _upstream_client().get(
+            f"http://{MARIMO_HOST}:{MARIMO_HTTP_PORT}/", timeout=2.0
+        )
         if resp.status_code < 500:
             return Response("ready", status_code=200, headers=headers)
     except Exception:
@@ -492,43 +515,90 @@ async def term_proxy(websocket: WebSocket) -> None:
 # ---------------------------------------------------------------------------
 
 
+# Hop-by-hop headers that must never be relayed (Starlette/uvicorn manage the
+# connection and framing themselves).
+_HOP_BY_HOP = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+}
+
+
 @asgi_app.api_route(
     "/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
 )
 async def http_proxy(request: Request, path: str) -> Response:
-    """Forward any HTTP method to marimo on localhost:8081 after cookie check."""
+    """Forward any HTTP method to marimo on localhost:8081 after cookie check.
+
+    Runs on the shared keep-alive client. Only `text/html` responses are
+    buffered — the dropdown-terminal overlay is spliced in before `</body>`
+    (app chrome on every page, no marimo plugin needed). Everything else —
+    static bundles, API JSON, downloads — streams through chunk-by-chunk
+    with its original headers, so large bodies never sit in proxy memory.
+    The raw query string passes through untouched (duplicate params intact).
+    """
     if not _cookie_is_valid(request.cookies.get(SESSION_COOKIE)):
         return Response("Unauthorized", status_code=401)
 
     upstream = f"http://{MARIMO_HOST}:{MARIMO_HTTP_PORT}/{path}"
-    body = await request.body()
+    if request.url.query:
+        upstream = f"{upstream}?{request.url.query}"
     headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+    # Stream the request body through only when there is one — chunked framing
+    # on a bodyless GET would be gratuitous.
+    has_body = "content-length" in request.headers or (
+        "transfer-encoding" in request.headers
+    )
+    client = _upstream_client()
+    req = client.build_request(
+        request.method,
+        upstream,
+        headers=headers,
+        content=request.stream() if has_body else None,
+    )
+    resp = await client.send(req, stream=True)
 
-    async with httpx.AsyncClient(timeout=None) as client:
-        resp = await client.request(
-            request.method,
-            upstream,
-            params=dict(request.query_params),
-            headers=headers,
-            content=body,
-        )
-    # Splice the dropdown-terminal overlay into marimo's HTML shell. Done here
-    # (not as a marimo plugin) so the terminal is app chrome on every page.
-    content = resp.content
     if "text/html" in resp.headers.get("content-type", "").lower():
+        # Buffer + splice the terminal overlay. `aread()` decodes any
+        # content-encoding, and the injection changes the size, so drop both
+        # headers and let Starlette recompute the length.
+        content = await resp.aread()
+        await resp.aclose()
         content = content.replace(b"</body>", _TERM_INJECTION + b"</body>", 1)
+        forbidden = _HOP_BY_HOP | {"content-encoding", "content-length"}
+        out_headers = {
+            k: v for k, v in resp.headers.items() if k.lower() not in forbidden
+        }
+        return Response(
+            content=content, status_code=resp.status_code, headers=out_headers
+        )
 
-    # Strip hop-by-hop headers httpx may carry across, plus content-length —
-    # the injection changes the body size, so let Starlette recompute it.
-    forbidden = {
-        "content-encoding",
-        "transfer-encoding",
-        "connection",
-        "content-length",
+    # Non-HTML: stream the raw (still-encoded) bytes through, keeping
+    # content-length/content-encoding — the byte count is unchanged.
+    async def _relay():
+        """Relay upstream bytes; a pre-buffered response (e.g. a canned test
+        transport) has no live stream left, so fall back to its content."""
+        if resp.is_stream_consumed:
+            yield resp.content
+            return
+        async for chunk in resp.aiter_raw():
+            yield chunk
+
+    out_headers = {
+        k: v for k, v in resp.headers.items() if k.lower() not in _HOP_BY_HOP
     }
-    out_headers = {k: v for k, v in resp.headers.items() if k.lower() not in forbidden}
-    return Response(content=content, status_code=resp.status_code, headers=out_headers)
+    return StreamingResponse(
+        _relay(),
+        status_code=resp.status_code,
+        headers=out_headers,
+        background=BackgroundTask(resp.aclose),
+    )
 
 
 @asgi_app.websocket("/{path:path}")
@@ -552,9 +622,9 @@ async def ws_proxy(websocket: WebSocket, path: str) -> None:
                     msg = await websocket.receive()
                     if msg["type"] == "websocket.disconnect":
                         return
-                    if (data := msg.get("text")) is not None:
-                        await upstream.send(data)
-                    elif (data := msg.get("bytes")) is not None:
+                    if (data := msg.get("text")) is not None or (
+                        data := msg.get("bytes")
+                    ) is not None:
                         await upstream.send(data)
             except Exception:
                 return

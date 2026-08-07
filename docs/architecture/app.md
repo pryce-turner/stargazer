@@ -59,7 +59,9 @@ If provisioning fails, the user lands on a provisioning page with a sign-out lin
 
 **Resources live in the notebook.** A workspace notebook's `[tool.stargazer]` header (cpu/memory) is parsed textually at launch — no code execution — and honored as-authored, no ceiling. Image-baked notebooks carry no header and fall back to the env default.
 
-**Tiles are stateful and authoritative.** On load the dashboard asks the control plane which `nb-{slug}-{mode}` apps are live and hydrates those tiles to Open/Stop; a notebook runs in edit *or* run mode, never both. This is read from Flyte rather than in-memory state, so it survives admin restarts.
+**Tiles are stateful and authoritative.** On load the dashboard asks the control plane which `nb-{slug}-{mode}` apps are live and hydrates those tiles to Open/Stop; a notebook runs in edit *or* run mode, never both. Discovery is a single project-scoped deployment list (no GitHub calls on the hot path), re-checked per app for authoritative status. This is read from Flyte rather than in-memory state, so it survives admin restarts.
+
+**The tier is lightweight by construction.** Each process holds one pooled HTTP client for all its outbound calls (GitHub API, admin→pod syncs, proxy→marimo), responses from the admin are gzip-compressed, and the notebook proxy streams everything except the HTML pages it decorates — large notebook assets never sit in proxy memory. Details in `.opencode/reference/architecture/app_internals.md`.
 
 ## Snapshots
 

@@ -46,9 +46,8 @@ from pathlib import Path
 
 import flyte
 import flyte.app
-import httpx
-from flyte.remote import App
 from fastapi import FastAPI, Form, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
@@ -56,14 +55,10 @@ from fastapi.responses import (
     RedirectResponse,
 )
 from fastapi.staticfiles import StaticFiles
+from flyte.remote import App
 
-from stargazer.config import (
-    PROJECT_ROOT,
-    STARGAZER_ENV_VARS,
-    logger,
-)
-
-from app import config, installation_tokens
+from app import config, http_client, installation_tokens
+from app.assets import router as assets_router
 from app.github import (
     canonical_fork_name,
     create_snapshot_notebook,
@@ -76,10 +71,15 @@ from app.github import (
     get_snapshot_notebook,
     get_workspace_notebook,
     is_genuine_fork,
-    list_snapshots as gh_list_snapshots,
-    list_workspace as gh_list_workspace,
     update_workspace_notebook,
 )
+from app.github import (
+    list_snapshots as gh_list_snapshots,
+)
+from app.github import (
+    list_workspace as gh_list_workspace,
+)
+from app.init import init
 from app.notebook_meta import (
     DEFAULT_RESOURCES,
     NotebookResources,
@@ -90,10 +90,8 @@ from app.notebook_meta import (
     resources_from_inputs,
     with_stargazer_resources,
 )
-from app.init import init
 from app.notebooks import (
     IMAGE_WORKDIR,
-    NOTEBOOKS,
     SEED_SLUGS,
     SNAPSHOT_NOTEBOOK_DIR,
     WORKSPACE_NOTEBOOK_DIR,
@@ -101,7 +99,6 @@ from app.notebooks import (
     by_section,
     by_slug,
 )
-from app.assets import router as assets_router
 from app.oauth import exchange_code, get_github_user, github_auth_url
 from app.per_notebook import (
     NOTEBOOK_IMAGE_URI,
@@ -120,7 +117,11 @@ from app.session import (
     sign_pod_capability,
 )
 from app.templates import templates
-
+from stargazer.config import (
+    PROJECT_ROOT,
+    STARGAZER_ENV_VARS,
+    logger,
+)
 
 # ---------------------------------------------------------------------------
 # Flyte AppEnvironment for the admin app itself.
@@ -148,6 +149,37 @@ _RUNTIME_SECRETS = {
     for name in (*_SECRET_NAMES, *_GITHUB_APP_NAMES, *_STORAGE_NAMES)
     if os.environ.get(name)
 }
+
+# The App credentials are all-or-nothing: the id is useless without the key to
+# sign the JWT.
+_APP_CREDS = ("GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY")
+
+
+def _partial_app_creds() -> list[str]:
+    """Names missing from a *partially* configured GitHub App credential pair.
+
+    Empty in both valid states: all set (App configured) or none set (a
+    pre-App deploy, which is supported). Non-empty only for the broken middle
+    — an id that can't sign, or a key with no id.
+
+    That middle state is the dangerous one because it fails *silently*: every
+    `get_installation_id` raises, `/auth/callback` swallows it as "app not
+    installed", and Workspace saving reads disabled for users who genuinely
+    have a fork and an install. `main()` refuses to deploy on it; module
+    import only warns, so a pod that somehow starts misconfigured still says
+    so in its logs instead of just misbehaving.
+    """
+    if not any(os.environ.get(n) for n in _APP_CREDS):
+        return []
+    return [n for n in _APP_CREDS if not os.environ.get(n)]
+
+
+if _partial_app_creds():
+    logger.warning(
+        f"Partial GitHub App config: {_partial_app_creds()} not set. "
+        "Fork-scoped tokens cannot be minted, so Workspace saving will read "
+        "as disabled for every user."
+    )
 
 # Admin pod needs a default Flyte project for code-bundle uploads during
 # per-user `serve.aio(per_notebook_env)` calls. `with_servecontext(project=...)`
@@ -236,12 +268,22 @@ def _env(key: str) -> str:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Initialize Flyte client so /launch can call flyte.serve.aio()."""
+    """Init the Flyte client at startup; close the shared HTTP client at exit.
+
+    `init()` configures the SDK so /launch can call `flyte.serve.aio()`.
+    Every outbound HTTP call (GitHub API, admin→pod probes/syncs) rides the
+    shared pooled `app.http_client` client, created lazily on first use and
+    drained here on shutdown.
+    """
     init()
     yield
+    await http_client.aclose()
 
 
 asgi_app = FastAPI(title="Stargazer", docs_url=None, redoc_url=None, lifespan=lifespan)
+# The dashboard HTML and the asset listings compress well; tiny responses
+# (health checks, redirects) are left alone.
+asgi_app.add_middleware(GZipMiddleware, minimum_size=1024)
 asgi_app.mount(
     "/static",
     StaticFiles(directory=str(Path(__file__).parent / "static")),
@@ -293,23 +335,33 @@ def _session_redirect(
 async def _list_workspace_from_pods(
     session_cookie: str, endpoints: dict[tuple[str, str], str]
 ) -> list[str] | None:
-    """Try each previously-launched per-notebook pod for a workspace listing.
+    """Ask the previously-launched per-notebook pods for a workspace listing.
 
-    Returns the first successful response's file list, or None if no pod
-    answers within the short per-attempt timeout. Uses each pod's public
-    endpoint URL (cached at /launch time) so the request follows the same
-    path the browser uses — no dependence on in-cluster DNS.
+    All pods are probed in parallel (2s timeout each, on the shared pooled
+    client) and the first successful response's file list wins; None if no pod
+    answers. Uses each pod's public endpoint URL (cached at /launch time) so
+    the request follows the same path the browser uses — no dependence on
+    in-cluster DNS.
     """
-    for endpoint in endpoints.values():
+
+    async def _probe(endpoint: str) -> list[str] | None:
+        """One pod's listing, or None on any failure."""
         url = f"{endpoint.rstrip('/')}/__sg__/workspace/list"
         try:
-            async with httpx.AsyncClient(timeout=2.0, follow_redirects=True) as client:
-                resp = await client.get(url, cookies={SESSION_COOKIE: session_cookie})
+            resp = await http_client.client().get(
+                url,
+                cookies={SESSION_COOKIE: session_cookie},
+                timeout=2.0,
+                follow_redirects=True,
+            )
             if resp.status_code == 200:
                 return resp.json().get("files", [])
         except Exception:
-            continue
-    return None
+            pass
+        return None
+
+    results = await asyncio.gather(*(_probe(e) for e in endpoints.values()))
+    return next((files for files in results if files is not None), None)
 
 
 async def _resolve_workspace_files(
@@ -352,22 +404,19 @@ async def _resolve_snapshot_files(session: SessionData) -> list[str]:
         return []
 
 
-async def _candidate_slugs(session: SessionData, cookie_value: str) -> list[str]:
-    """All notebook slugs whose per-notebook apps a user might have.
+def _parse_nb_name(name: str) -> tuple[str, str] | None:
+    """Split a per-notebook app name `nb-{slug}-{mode}` into `(slug, mode)`.
 
-    Registry Tutorials/Community plus the user's Workspace notebooks (seeds
-    excluded) and frozen Snapshots. Shared by `/launch/status` and
-    `/workspace/cleanup` to bound the set of `nb-{slug}-{mode}` apps they query.
+    Slugs may themselves contain dashes, so the mode is the *last* segment and
+    must be a real mode. Returns None for anything that isn't a per-notebook
+    app deployment (other services in the project are ignored).
     """
-    slugs = [n.slug for n in NOTEBOOKS]
-    if session.workspace_enabled:
-        files = await _resolve_workspace_files(session, cookie_value)
-        slugs += [
-            slug for f in files if (slug := f.removesuffix(".py")) not in SEED_SLUGS
-        ]
-        snapshots = await _resolve_snapshot_files(session)
-        slugs += [f.removesuffix(".py") for f in snapshots]
-    return slugs
+    if not name.startswith("nb-"):
+        return None
+    slug, _, mode = name.removeprefix("nb-").rpartition("-")
+    if not slug or mode not in ("edit", "run"):
+        return None
+    return slug, mode
 
 
 # ---------------------------------------------------------------------------
@@ -539,8 +588,11 @@ async def landing(request: Request):
     snapshots: list[str] = []
     if session.workspace_enabled:
         cookie_value = request.cookies.get(SESSION_COOKIE, "")
-        files = await _resolve_workspace_files(session, cookie_value)
-        snapshots = await _resolve_snapshot_files(session)
+        # Independent listings (pods/GitHub vs GitHub) — resolve concurrently.
+        files, snapshots = await asyncio.gather(
+            _resolve_workspace_files(session, cookie_value),
+            _resolve_snapshot_files(session),
+        )
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -608,6 +660,14 @@ async def auth_callback(request: Request, code: str, state: str):
         existing_fork = await find_existing_fork(access_token, username)
         if existing_fork is not None:
             fork_full_name = existing_fork["full_name"]
+        else:
+            # Not an error — most users simply never opted in. Logged anyway
+            # because it's otherwise indistinguishable from a *failed* lookup:
+            # both land on the Enable button with no trace of which happened.
+            logger.info(
+                f"No usable fork at {canonical_fork_name(username)!r} for "
+                f"{username!r} — Workspace saving stays off"
+            )
     except Exception as exc:
         logger.warning(f"Fork lookup failed for {username!r}: {exc}")
 
@@ -1274,29 +1334,38 @@ async def stop(
 async def launch_status(request: Request):
     """Report which of the user's notebooks have an active per-notebook app.
 
-    For each candidate `nb-{slug}-{mode}` (Tutorials/Community from the
-    registry, plus the user's Workspace notebooks), query Flyte in the user's
-    project and keep the ones that are active with a public endpoint. Queried
-    live from the control plane, so it's authoritative and survives admin
-    restarts (unlike the in-memory `_launched`). The dashboard calls this on
-    load to render running notebooks straight to Open+Stop instead of a fresh
-    Edit/Run that would re-spin.
+    Discovery is one control-plane list (`list_project_apps`, the same call
+    `/workspace/cleanup` uses) of every deployment in the user's project,
+    filtered to `nb-{slug}-{mode}` names — no GitHub round-trips, no probing
+    of notebooks that were never launched. Each discovered name is then
+    re-fetched with `App.get` (in parallel) for authoritative status, since a
+    list payload may not carry full conditions, and the active ones with a
+    public endpoint are returned. Queried live from the control plane, so
+    it's authoritative and survives admin restarts (unlike the in-memory
+    `_launched`). The dashboard calls this on load to render running
+    notebooks straight to Open+Stop instead of a fresh Edit/Run that would
+    re-spin.
     """
     session = _get_session(request)
     if session is None:
         return JSONResponse({"error": "not authenticated"}, status_code=401)
     project = sanitize_project_id(session.github_username)
     cookie_value = request.cookies.get(SESSION_COOKIE, "")
-    slugs = await _candidate_slugs(session, cookie_value)
+    try:
+        apps = await list_project_apps(project, domain="development")
+    except Exception as exc:
+        logger.warning(f"status listing failed for {project!r}: {exc}")
+        return JSONResponse({"running": []})
+    candidates = [
+        (app.name, parsed) for app in apps if (parsed := _parse_nb_name(app.name))
+    ]
 
-    async def _probe(slug: str, mode: str) -> dict | None:
-        """Return run info for `nb-{slug}-{mode}` if it's active, else None."""
+    async def _probe(name: str, slug: str, mode: str) -> dict | None:
+        """Return run info for a discovered app if it's active, else None."""
         try:
-            app = await App.get.aio(
-                name=f"nb-{slug}-{mode}", project=project, domain="development"
-            )
+            app = await App.get.aio(name=name, project=project, domain="development")
         except Exception:
-            return None  # not found / not deployed
+            return None  # vanished between list and get
         if app.is_active() and app.endpoint:
             # Hand off the session as a one-shot `sg_launch` token, same as
             # `/launch`. The notebook lives on a sibling subdomain with a
@@ -1311,7 +1380,7 @@ async def launch_status(request: Request):
             }
         return None
 
-    probes = [_probe(slug, mode) for slug in slugs for mode in ("edit", "run")]
+    probes = [_probe(name, slug, mode) for name, (slug, mode) in candidates]
     running = [r for r in await asyncio.gather(*probes) if r is not None]
     return JSONResponse({"running": running})
 
@@ -1348,8 +1417,12 @@ async def workspace_save(
     cookie = request.cookies.get(SESSION_COOKIE, "")
     sync_url = f"{app.endpoint.rstrip('/')}/__sg__/workspace/sync"
     try:
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-            resp = await client.post(sync_url, cookies={SESSION_COOKIE: cookie})
+        resp = await http_client.client().post(
+            sync_url,
+            cookies={SESSION_COOKIE: cookie},
+            timeout=20.0,
+            follow_redirects=True,
+        )
     except Exception as exc:
         logger.warning(f"Save sync failed for {slug!r}/{mode!r}: {exc}")
         return JSONResponse(
@@ -1532,6 +1605,17 @@ def main():
         raise SystemExit(
             f"Missing required env vars: {', '.join(missing)}. "
             f"Export them before deploying."
+        )
+    # Half-configured GitHub App: refuse rather than ship a deploy whose only
+    # symptom is Workspace saving quietly reading "off" for everyone. Omitting
+    # both credentials stays allowed — that's a valid pre-App deploy.
+    if partial := _partial_app_creds():
+        raise SystemExit(
+            f"Partial GitHub App config: {', '.join(partial)} not set, but "
+            f"{', '.join(n for n in _APP_CREDS if n not in partial)} is. "
+            "The App id cannot sign without its private key, so fork-scoped "
+            "tokens would fail and Workspace saving would read as disabled "
+            "for every user. Export both (or neither) before deploying."
         )
     init(root_dir=PROJECT_ROOT)
     _start_storage_port_forward()

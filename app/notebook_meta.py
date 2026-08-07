@@ -28,7 +28,6 @@ import re
 import tomllib
 from dataclasses import dataclass
 
-
 # PEP 723 script-metadata block: `# /// script` … `# ///`, every line in
 # between prefixed with `#`. Mirrors the reference regex in the PEP.
 _PEP723_BLOCK = re.compile(
@@ -128,14 +127,15 @@ def memory_to_gib(memory: str) -> int:
 
     The settings modal and create form both speak whole GiB, while the header
     stores a Kubernetes quantity (`"4Gi"`). Recovers the integer for the form:
-    `"4Gi"` → 4, a bare digit string → itself, anything else → the default.
+    `"4Gi"` → 4, a bare digit string → itself, anything else → the default
+    (derived from `DEFAULT_RESOURCES` so the two can't silently diverge).
     """
     text = memory.strip()
     if text.endswith("Gi") and text[:-2].isdigit():
         return int(text[:-2])
     if text.isdigit():
         return int(text)
-    return 2
+    return int(DEFAULT_RESOURCES.memory.removesuffix("Gi"))
 
 
 def parse_notebook_resources(source: str) -> NotebookResources:

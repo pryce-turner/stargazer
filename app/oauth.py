@@ -2,15 +2,15 @@
 ### GitHub OAuth helpers.
 
 Handles the authorization URL construction, code-for-token exchange,
-and authenticated user profile fetch against the GitHub API.
+and authenticated user profile fetch against the GitHub API. All calls
+ride the shared pooled client (`app.http_client`).
 
 spec: [docs/architecture/app.md](../docs/architecture/app.md)
 """
 
 import urllib.parse
 
-import aiohttp
-
+from app import http_client
 
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -43,18 +43,17 @@ async def exchange_code(
 
     Returns the access token string. Raises ValueError on failure.
     """
-    async with aiohttp.ClientSession() as session:
-        resp = await session.post(
-            GITHUB_TOKEN_URL,
-            data={
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "code": code,
-                "redirect_uri": redirect_uri,
-            },
-            headers={"Accept": "application/json"},
-        )
-        data = await resp.json()
+    resp = await http_client.client().post(
+        GITHUB_TOKEN_URL,
+        data={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+            "redirect_uri": redirect_uri,
+        },
+        headers={"Accept": "application/json"},
+    )
+    data = resp.json()
 
     if "access_token" not in data:
         error = data.get("error_description", data.get("error", "unknown error"))
@@ -68,13 +67,12 @@ async def get_github_user(access_token: str) -> dict:
 
     Returns a dict with at least 'login' (username) and 'id' (numeric).
     """
-    async with aiohttp.ClientSession() as session:
-        resp = await session.get(
-            GITHUB_USER_URL,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/json",
-            },
-        )
-        resp.raise_for_status()
-        return await resp.json()
+    resp = await http_client.client().get(
+        GITHUB_USER_URL,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        },
+    )
+    resp.raise_for_status()
+    return resp.json()

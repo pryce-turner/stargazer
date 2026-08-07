@@ -3,26 +3,28 @@
 Phase 1 of the token-scope hardening plan: a self-contained client that
 mints short-lived, fork-scoped installation tokens from the GitHub App
 private key. No live behavior depends on it yet, so everything here is
-exercised against a generated RSA key and a fake `aiohttp` session — no
-network, no real GitHub App.
+exercised against a generated RSA key and an `httpx.MockTransport`-backed
+shared client — no network, no real GitHub App.
 
-The fake session mirrors the `async with aiohttp.ClientSession() as s`
-shape `app.github` already uses, returning canned JSON per URL so we can
-assert the request shape (URL, JWT bearer, body) and the response parsing.
+The fake transport is installed straight into `app.http_client._client`
+(the shared pooled client every GitHub call rides), returning canned JSON
+per (method, url) so we can assert the request shape (URL, JWT bearer,
+body) and the response parsing.
 """
 
+import json
 import time
 
+import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from app import installation_tokens
-
+from app import http_client, installation_tokens
 
 # ---------------------------------------------------------------------------
-# RSA key + fake aiohttp session fixtures
+# RSA key + fake transport fixtures
 # ---------------------------------------------------------------------------
 
 
@@ -47,72 +49,33 @@ def app_env(monkeypatch, rsa_keypair):
     return private_pem
 
 
-class _FakeResponse:
-    """Minimal stand-in for an aiohttp response."""
-
-    def __init__(self, status: int, payload: dict, recorder: dict):
-        self.status = status
-        self._payload = payload
-        self._recorder = recorder
-
-    def raise_for_status(self):
-        """Raise on >=400 like aiohttp would."""
-        if self.status >= 400:
-            raise RuntimeError(f"HTTP {self.status}")
-
-    async def json(self):
-        """Return the canned JSON payload."""
-        return self._payload
-
-
-class _FakeSession:
-    """Fake `aiohttp.ClientSession` recording the request it received.
-
-    Constructed with a `routes` dict mapping (method, url) -> payload and a
-    shared `recorder` dict the test inspects after the call.
-    """
-
-    def __init__(self, routes: dict, recorder: dict):
-        self._routes = routes
-        self._recorder = recorder
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_):
-        return False
-
-    def _handle(self, method, url, *, headers=None, json=None):
-        self._recorder["method"] = method
-        self._recorder["url"] = url
-        self._recorder["headers"] = headers or {}
-        self._recorder["json"] = json
-        payload = self._routes[(method, url)]
-        return _FakeResponse(200, payload, self._recorder)
-
-    async def get(self, url, **kw):
-        """Record + answer a GET."""
-        return self._handle("GET", url, **kw)
-
-    async def post(self, url, **kw):
-        """Record + answer a POST."""
-        return self._handle("POST", url, **kw)
-
-
 @pytest.fixture
 def fake_http(monkeypatch):
-    """Patch `aiohttp.ClientSession` with a recording fake.
+    """Install a MockTransport-backed client as the shared `app.http_client`.
 
-    Returns a `configure(routes)` callable; the captured request lands in the
-    returned `recorder` dict.
+    Returns a `configure(routes)` callable; `routes` maps `(method, url)` to a
+    canned JSON payload. The last request lands in the returned `recorder`
+    dict (`method`/`url`/`headers`/`json`), and per-route hit counts accumulate
+    in `recorder["calls"]` so cache behavior can be asserted without a second
+    fake layer.
     """
     recorder: dict = {}
 
     def configure(routes: dict):
+        def handler(request: httpx.Request) -> httpx.Response:
+            key = (request.method, str(request.url))
+            recorder["method"] = request.method
+            recorder["url"] = str(request.url)
+            recorder["headers"] = request.headers  # case-insensitive mapping
+            recorder["json"] = json.loads(request.content) if request.content else None
+            recorder.setdefault("calls", {})
+            recorder["calls"][key] = recorder["calls"].get(key, 0) + 1
+            return httpx.Response(200, json=routes[key])
+
         monkeypatch.setattr(
-            installation_tokens.aiohttp,
-            "ClientSession",
-            lambda *a, **k: _FakeSession(routes, recorder),
+            http_client,
+            "_client",
+            httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         )
         return recorder
 
@@ -173,24 +136,15 @@ async def test_get_installation_id_calls_user_endpoint(app_env, fake_http):
     assert recorder["headers"]["Authorization"].startswith("Bearer ")
 
 
-async def test_get_installation_id_caches_per_owner(app_env, fake_http, monkeypatch):
+async def test_get_installation_id_caches_per_owner(app_env, fake_http):
     """A second lookup for the same owner is served from cache (no GET)."""
     installation_tokens._installation_id_cache.clear()
     url = "https://api.github.com/users/octocat/installation"
-    fake_http({("GET", url): {"id": 42}})
-
-    calls = {"n": 0}
-    orig_get = _FakeSession.get
-
-    def counting_get(self, u, **kw):
-        calls["n"] += 1
-        return orig_get(self, u, **kw)
-
-    monkeypatch.setattr(_FakeSession, "get", counting_get)
+    recorder = fake_http({("GET", url): {"id": 42}})
 
     assert await installation_tokens.get_installation_id("octocat") == 42
     assert await installation_tokens.get_installation_id("octocat") == 42
-    assert calls["n"] == 1
+    assert recorder["calls"][("GET", url)] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -216,31 +170,14 @@ async def test_mint_token_scopes_to_repo_names(app_env, fake_http):
     assert recorder["headers"]["Authorization"].startswith("Bearer ")
 
 
-async def test_mint_token_caches_until_near_expiry(app_env, fake_http, monkeypatch):
+async def test_mint_token_caches_until_near_expiry(app_env, fake_http):
     """A cached, unexpired token is reused without a second GitHub call."""
     installation_tokens._token_cache.clear()
     url = "https://api.github.com/app/installations/42/access_tokens"
     far_future = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 3600))
-    calls = {"n": 0}
-
-    real_configure = fake_http
-
-    def counting_routes():
-        recorder = real_configure(
-            {("POST", url): {"token": "ghs_cached", "expires_at": far_future}}
-        )
-        return recorder
-
-    counting_routes()
-
-    # Count POSTs by wrapping the session factory.
-    orig_post = _FakeSession.post
-
-    def counting_post(self, u, **kw):
-        calls["n"] += 1
-        return orig_post(self, u, **kw)
-
-    monkeypatch.setattr(_FakeSession, "post", counting_post)
+    recorder = fake_http(
+        {("POST", url): {"token": "ghs_cached", "expires_at": far_future}}
+    )
 
     t1, _ = await installation_tokens.mint_installation_token(
         42, repositories=["stargazer"]
@@ -250,29 +187,20 @@ async def test_mint_token_caches_until_near_expiry(app_env, fake_http, monkeypat
     )
 
     assert t1 == t2 == "ghs_cached"
-    assert calls["n"] == 1  # second call served from cache
+    assert recorder["calls"][("POST", url)] == 1  # second call served from cache
 
 
-async def test_mint_token_refreshes_when_expired(app_env, fake_http, monkeypatch):
+async def test_mint_token_refreshes_when_expired(app_env, fake_http):
     """A token at/near expiry is re-minted rather than served stale."""
     installation_tokens._token_cache.clear()
     url = "https://api.github.com/app/installations/42/access_tokens"
     past = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 10))
     recorder = fake_http({("POST", url): {"token": "ghs_new", "expires_at": past}})
 
-    calls = {"n": 0}
-    orig_post = _FakeSession.post
-
-    def counting_post(self, u, **kw):
-        calls["n"] += 1
-        return orig_post(self, u, **kw)
-
-    monkeypatch.setattr(_FakeSession, "post", counting_post)
-
     await installation_tokens.mint_installation_token(42, repositories=["stargazer"])
     await installation_tokens.mint_installation_token(42, repositories=["stargazer"])
 
-    assert calls["n"] == 2  # expired cache entry forces a refresh
+    assert recorder["calls"][("POST", url)] == 2  # expired entry forces a refresh
     assert recorder["url"] == url
 
 
@@ -303,3 +231,35 @@ async def test_fork_token_resolves_install_and_mints_scoped(app_env, fake_http):
     # The final recorded call is the mint, scoped to just the fork's name.
     assert recorder["url"] == mint_url
     assert recorder["json"] == {"repositories": ["stargazer"]}
+
+
+# ---------------------------------------------------------------------------
+# get_installation_id — a renamed owner (301) must not read as "not installed"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_installation_id_follows_owner_rename_redirect(app_env, monkeypatch):
+    """GitHub 301s this path after an owner rename — follow it.
+
+    The shared client has redirects off (the write guards depend on seeing a
+    3xx), and httpx's `raise_for_status` treats a 3xx as an error. Without an
+    explicit follow, a renamed account raises here, the caller's `except`
+    reads it as "app not installed", and Workspace saving silently turns off.
+    """
+    installation_tokens._installation_id_cache.clear()
+    old = "https://api.github.com/users/octocat/installation"
+    new = "https://api.github.com/users/octocat-renamed/installation"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == old:
+            return httpx.Response(301, headers={"location": new})
+        return httpx.Response(200, json={"id": 99})
+
+    monkeypatch.setattr(
+        http_client,
+        "_client",
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    assert await installation_tokens.get_installation_id("octocat") == 99

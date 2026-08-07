@@ -320,15 +320,19 @@
     // start reads as intentional (not a broken about:blank) until we navigate it.
     function paintStartingTab(win) {
         if (!win) return;
-        win.document.write(
-            "<!doctype html><meta charset='utf-8'><title>Starting notebook…</title>" +
-                "<body style='margin:0;height:100vh;display:grid;place-items:center;" +
-                "font:16px/1.5 system-ui,sans-serif;color:#555;background:#fafafa'>" +
-                "<div style='text-align:center'>Starting your notebook…<br>" +
-                "<small style='color:#999'>This can take a minute on a cold start.</small>" +
-                "</div></body>",
-        );
-        win.document.close();
+        const doc = win.document;
+        doc.title = "Starting notebook…";
+        doc.body.style.cssText =
+            "margin:0;height:100vh;display:grid;place-items:center;" +
+            "font:16px/1.5 system-ui,sans-serif;color:#555;background:#fafafa";
+        const box = doc.createElement("div");
+        box.style.textAlign = "center";
+        box.append("Starting your notebook…", doc.createElement("br"));
+        const hint = doc.createElement("small");
+        hint.style.color = "#999";
+        hint.textContent = "This can take a minute on a cold start.";
+        box.append(hint);
+        doc.body.replaceChildren(box);
     }
 
     // Re-open a hydrated (possibly scaled-to-zero or stale) notebook: re-serve

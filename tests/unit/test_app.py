@@ -9,10 +9,19 @@ is injected per test and signed session cookies are minted with the real
 
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.admin_app import _dashboard_context, _workspace_tiles, asgi_app
+from app.admin_app import (
+    _SECRET_NAMES,
+    _dashboard_context,
+    _partial_app_creds,
+    _workspace_tiles,
+    asgi_app,
+    main,
+)
+from app.github import _ensure_ok
 from app.session import (
     SESSION_COOKIE,
     SessionData,
@@ -21,7 +30,6 @@ from app.session import (
     read_session_cookie,
     sign_pod_capability,
 )
-
 
 SECRET = "test-session-secret"
 
@@ -647,6 +655,15 @@ def _stub_app_get(monkeypatch, table: dict, deleted: list | None = None):
     )
 
 
+def _stub_project_list(monkeypatch, names: list[str]):
+    """Patch list_project_apps so status discovery sees these deployment names."""
+
+    async def fake_list(project, domain="development", limit=500):
+        return [SimpleNamespace(name=n) for n in names]
+
+    monkeypatch.setattr("app.admin_app.list_project_apps", fake_list)
+
+
 def test_launch_status_requires_session(secret_env, client):
     """Unauthenticated /launch/status is rejected with 401."""
     resp = client.get("/launch/status")
@@ -654,10 +671,15 @@ def test_launch_status_requires_session(secret_env, client):
 
 
 def test_launch_status_reports_only_active_apps(secret_env, client, monkeypatch):
-    """Status returns active per-notebook apps with their endpoints."""
+    """Status returns active per-notebook apps with their endpoints.
+
+    Discovery is the project-wide deployment list; non-notebook deployments
+    are ignored and each `nb-*` name is re-fetched for authoritative status.
+    """
+    _stub_project_list(monkeypatch, ["nb-assets-edit", "other-service"])
     _stub_app_get(monkeypatch, {"nb-assets-edit": _FakeApp(True, "http://nb.example")})
 
-    _auth(client)  # no fork → workspace off → registry notebooks only
+    _auth(client)
     resp = client.get("/launch/status", headers={"Accept": "application/json"})
     assert resp.status_code == 200
     running = resp.json()["running"]
@@ -674,12 +696,40 @@ def test_launch_status_reports_only_active_apps(secret_env, client, monkeypatch)
 
 def test_launch_status_skips_inactive_apps(secret_env, client, monkeypatch):
     """A deployed-but-inactive app is not reported as running."""
+    _stub_project_list(monkeypatch, ["nb-assets-edit"])
     _stub_app_get(monkeypatch, {"nb-assets-edit": _FakeApp(False, "http://nb.example")})
 
     _auth(client)
     resp = client.get("/launch/status", headers={"Accept": "application/json"})
     assert resp.status_code == 200
     assert resp.json()["running"] == []
+
+
+def test_launch_status_survives_listing_failure(secret_env, client, monkeypatch):
+    """A control-plane listing failure degrades to 'nothing running', not a 500."""
+
+    async def boom(project, domain="development", limit=500):
+        raise RuntimeError("control plane down")
+
+    monkeypatch.setattr("app.admin_app.list_project_apps", boom)
+
+    _auth(client)
+    resp = client.get("/launch/status", headers={"Accept": "application/json"})
+    assert resp.status_code == 200
+    assert resp.json()["running"] == []
+
+
+def test_parse_nb_name_roundtrips_dashed_slugs():
+    """`nb-{slug}-{mode}` parses back even when the slug itself has dashes."""
+    from app.admin_app import _parse_nb_name
+
+    assert _parse_nb_name("nb-assets-edit") == ("assets", "edit")
+    assert _parse_nb_name("nb-scrna-pipeline-run") == ("scrna-pipeline", "run")
+    assert _parse_nb_name("nb-frozen-analysis-run") == ("frozen-analysis", "run")
+    # Non-notebook deployments and malformed names are ignored.
+    assert _parse_nb_name("other-service") is None
+    assert _parse_nb_name("nb-edit") is None
+    assert _parse_nb_name("nb-thing-serve") is None
 
 
 # ---------------------------------------------------------------------------
@@ -713,29 +763,29 @@ def test_save_409_when_not_running(secret_env, client, monkeypatch):
 
 
 def test_save_posts_to_app_endpoint(secret_env, client, monkeypatch):
-    """Save POSTs the sync request to the notebook app's public endpoint."""
-    from app import admin_app
+    """Save POSTs the sync request to the notebook app's public endpoint.
+
+    The call rides the shared pooled client, so the test installs an
+    `httpx.MockTransport`-backed client into `app.http_client`.
+    """
+    import httpx
+
+    from app import http_client
 
     public = "http://nb-foo-edit-octocat-development.devbox.stargazer.bio"
     _stub_app_get(monkeypatch, {"nb-foo-edit": _FakeApp(True, public)})
 
     posted: dict = {}
 
-    class _FakeAsyncClient:
-        def __init__(self, **_):
-            pass
+    def handler(request: httpx.Request) -> httpx.Response:
+        posted["url"] = str(request.url)
+        return httpx.Response(200, json={"status": "ok"})
 
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_):
-            return False
-
-        async def post(self, url, cookies=None):
-            posted["url"] = url
-            return SimpleNamespace(status_code=200, json=lambda: {"status": "ok"})
-
-    monkeypatch.setattr(admin_app.httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setattr(
+        http_client,
+        "_client",
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
 
     _auth(client, fork_full_name="octocat/stargazer", access_token="tok")
     resp = client.post(
@@ -1018,22 +1068,20 @@ def test_launch_snapshot_run_serves_from_snapshots_dir(secret_env, client, monke
     assert served.resources.memory == "3Gi"
 
 
-async def test_candidate_slugs_includes_snapshots(monkeypatch):
-    """Snapshot slugs join workspace + registry slugs so /launch/status (and
-    cleanup) probe their run pods too — a running snapshot hydrates to Open/Stop.
+def test_launch_status_covers_snapshot_pods(secret_env, client, monkeypatch):
+    """A running snapshot pod hydrates to Open/Stop like any other launch.
+
+    Discovery comes from the project's deployment list (no GitHub calls), so
+    a snapshot's `nb-{slug}-run` app is reported without any snapshot listing.
     """
-    from app import admin_app
+    _stub_project_list(monkeypatch, ["nb-frozen-run"])
+    _stub_app_get(monkeypatch, {"nb-frozen-run": _FakeApp(True, "http://nb.example")})
 
-    async def fake_ws(_session, _cookie):
-        return []
-
-    async def fake_snaps(_session):
-        return ["frozen.py"]
-
-    monkeypatch.setattr(admin_app, "_resolve_workspace_files", fake_ws)
-    monkeypatch.setattr(admin_app, "_resolve_snapshot_files", fake_snaps)
-    slugs = await admin_app._candidate_slugs(_ws_session(), cookie_value="")
-    assert "frozen" in slugs
+    _auth(client, fork_full_name="octocat/stargazer", access_token="tok")
+    resp = client.get("/launch/status", headers={"Accept": "application/json"})
+    assert resp.status_code == 200
+    (entry,) = resp.json()["running"]
+    assert (entry["slug"], entry["mode"]) == ("frozen", "run")
 
 
 # ---------------------------------------------------------------------------
@@ -1761,3 +1809,86 @@ def test_copy_missing_snapshot_source_is_404(secret_env, client, monkeypatch):
         headers={"Accept": "application/json"},
     )
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# app.github._ensure_ok — redirects are failures, not successes
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ensure_ok_treats_redirect_as_failure():
+    """A 3xx must raise, not fall through to a `.json()` on a redirect body.
+
+    The shared client doesn't follow redirects, so GitHub answering a renamed
+    or transferred repo with a 301 has to surface as a descriptive error. A
+    `status < 400` guard would let it through and the caller would parse the
+    redirect body — a confusing KeyError/JSONDecodeError far from the cause.
+    """
+    resp = httpx.Response(
+        301,
+        headers={"location": "https://api.github.com/repositories/123"},
+        request=httpx.Request("GET", "https://api.github.com/repos/o/r/contents/x"),
+    )
+    with pytest.raises(RuntimeError, match="301"):
+        await _ensure_ok(resp, "list x")
+
+
+@pytest.mark.asyncio
+async def test_ensure_ok_passes_success_and_raises_on_error():
+    """2xx returns quietly; 4xx surfaces GitHub's own `message`."""
+    req = httpx.Request("GET", "https://api.github.com/repos/o/r")
+    await _ensure_ok(httpx.Response(200, json={}, request=req), "read")  # no raise
+    with pytest.raises(RuntimeError, match="Resource not accessible"):
+        await _ensure_ok(
+            httpx.Response(
+                403, json={"message": "Resource not accessible"}, request=req
+            ),
+            "write",
+        )
+
+
+# ---------------------------------------------------------------------------
+# GitHub App credential pairing — all-or-nothing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "env, expected",
+    [
+        ({"GITHUB_APP_ID": "1", "GITHUB_APP_PRIVATE_KEY": "k"}, []),
+        ({}, []),  # pre-App deploy: neither set is valid
+        ({"GITHUB_APP_ID": "1"}, ["GITHUB_APP_PRIVATE_KEY"]),
+        ({"GITHUB_APP_PRIVATE_KEY": "k"}, ["GITHUB_APP_ID"]),
+    ],
+    ids=["both-set", "neither-set", "id-without-key", "key-without-id"],
+)
+def test_partial_app_creds_flags_only_the_broken_middle(monkeypatch, env, expected):
+    """Both-set and neither-set are fine; exactly one set is a deploy mistake."""
+    for name in ("GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    assert _partial_app_creds() == expected
+
+
+def test_main_refuses_to_deploy_a_half_configured_app(monkeypatch):
+    """`main()` exits before deploying when only one App credential is set.
+
+    The failure it prevents is silent: a signing key that can't be built makes
+    every install check raise, which the login callback reads as "not
+    installed" — so saving reads off for users who are genuinely set up.
+    """
+    for name in _SECRET_NAMES:
+        monkeypatch.setenv(name, "x")
+    monkeypatch.setenv("GITHUB_APP_ID", "3975643")
+    monkeypatch.delenv("GITHUB_APP_PRIVATE_KEY", raising=False)
+
+    # Deploy side effects must never be reached.
+    def fail(*_a, **_kw):
+        raise AssertionError("deploy step ran despite partial App config")
+
+    monkeypatch.setattr("app.admin_app.init", fail)
+
+    with pytest.raises(SystemExit, match="GITHUB_APP_PRIVATE_KEY"):
+        main()

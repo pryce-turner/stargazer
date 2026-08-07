@@ -24,16 +24,18 @@ Primitives:
 The fork step itself (`fork_upstream`) and login-time fork detection
 (`find_existing_fork`) stay on the OAuth token — they predate the install.
 
+All GitHub calls ride the shared pooled client (`app.http_client`).
+
 spec: [docs/architecture/app.md](../docs/architecture/app.md)
 """
 
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-import aiohttp
 import jwt
 
+from app import http_client
 
 GITHUB_API_BASE = "https://api.github.com"
 
@@ -96,26 +98,30 @@ async def get_installation_id(owner: str) -> int:
     `GET /users/{owner}/installation`, authenticated as the app. The
     installation id is *not* a secret — callers may persist it in the session.
     Cached in `_installation_id_cache` so repeat mints don't re-look-up. Raises
-    `aiohttp.ClientResponseError` if the user hasn't installed the app (404) or
+    `httpx.HTTPStatusError` if the user hasn't installed the app (404) or
     on transport failure.
     """
     cached = _installation_id_cache.get(owner)
     if cached is not None:
         return cached
     url = f"{GITHUB_API_BASE}/users/{owner}/installation"
-    async with aiohttp.ClientSession() as session:
-        resp = await session.get(url, headers=_app_headers())
-        resp.raise_for_status()
-        data = await resp.json()
+    # Follow redirects here: GitHub 301s this path when the owner's login has
+    # been renamed, and httpx's `raise_for_status` treats a 3xx as an error.
+    # Without this a renamed account reads as "app not installed", silently
+    # turning Workspace saving off. No write happens here, so there is no
+    # redirect-retarget risk (writes keep redirects off — see `app.github`).
+    resp = await http_client.client().get(
+        url, headers=_app_headers(), follow_redirects=True
+    )
+    resp.raise_for_status()
+    data = resp.json()
     _installation_id_cache[owner] = data["id"]
     return data["id"]
 
 
 def _expiry_to_epoch(expires_at: str) -> float:
     """Parse a GitHub ISO-8601 `expires_at` (`...Z`) into a UTC epoch float."""
-    dt = datetime.strptime(expires_at, "%Y-%m-%dT%H:%M:%SZ").replace(
-        tzinfo=timezone.utc
-    )
+    dt = datetime.strptime(expires_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
     return dt.timestamp()
 
 
@@ -142,12 +148,11 @@ async def mint_installation_token(
             return token, _epoch_to_iso(expiry_epoch)
 
     url = f"{GITHUB_API_BASE}/app/installations/{installation_id}/access_tokens"
-    async with aiohttp.ClientSession() as session:
-        resp = await session.post(
-            url, headers=_app_headers(), json={"repositories": list(repositories)}
-        )
-        resp.raise_for_status()
-        data = await resp.json()
+    resp = await http_client.client().post(
+        url, headers=_app_headers(), json={"repositories": list(repositories)}
+    )
+    resp.raise_for_status()
+    data = resp.json()
 
     token, expires_at = data["token"], data["expires_at"]
     _token_cache[key] = (token, _expiry_to_epoch(expires_at))
@@ -172,4 +177,4 @@ async def fork_token(fork_full_name: str) -> str:
 
 def _epoch_to_iso(epoch: float) -> str:
     """Render a UTC epoch float back as a GitHub-style ISO-8601 `...Z` string."""
-    return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

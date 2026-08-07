@@ -51,6 +51,7 @@ Upcoming work is ordered — the **next feature is at the top**. Move items into
 
 ## Complete
 
+- ✅ App-tier performance & modernization audit (2026-07-06): one pooled HTTP client per process (aiohttp out of the app tier), streaming notebook proxy, `/launch/status` via a single project deployment list, gzip on the admin, single-flight public-asset cache. [`22_app_tier_performance_audit.md`](./22_app_tier_performance_audit.md)
 - ✅ scRNA preprocessing tutorial rebuild (Asset → Task → Workflow → local → remote). [`archive/15_scrna_tutorial_rebuild.md`](./archive/15_scrna_tutorial_rebuild.md)
 - ✅ Integrate marimo as the notebook experience (basic plumbing — per-user provisioning, in-pod execution, tutorial scaffold).
 - ✅ Create Stargazer org.

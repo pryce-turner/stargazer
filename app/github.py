@@ -9,14 +9,20 @@ on the fork's `main`. Snapshotting *moves* a notebook into `notebooks/snapshots/
 idempotent. Every write is guarded against ever targeting the upstream source
 (`is_genuine_fork`, plus an upstream-name check before create/delete).
 
+All calls ride the shared pooled client (`app.http_client`), which never
+follows redirects — so a transfer redirect always *surfaces* (writes error
+out; reads treat non-200 explicitly) rather than silently retargeting
+upstream.
+
 spec: [docs/architecture/app.md](../docs/architecture/app.md)
 """
 
 import base64
 import os
 
-import aiohttp
+import httpx
 
+from app import http_client
 
 GITHUB_API_BASE = "https://api.github.com"
 WORKSPACE_CONTENTS_PATH = "src/stargazer/notebooks/workspace"
@@ -87,22 +93,14 @@ async def fork_upstream(access_token: str) -> dict:
     if one already exists, so this is safe to call on every login.
 
     Returns the fork payload (dict with at least `owner.login`, `name`,
-    `clone_url`). Raises `aiohttp.ClientResponseError` on transport or
-    auth failure.
+    `clone_url`). Raises `httpx.HTTPStatusError` on transport or auth
+    failure.
     """
     owner, name = upstream_repo()
     url = f"{GITHUB_API_BASE}/repos/{owner}/{name}/forks"
-    async with aiohttp.ClientSession() as session:
-        resp = await session.post(
-            url,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-        )
-        resp.raise_for_status()
-        return await resp.json()
+    resp = await http_client.client().post(url, headers=_auth_headers(access_token))
+    resp.raise_for_status()
+    return resp.json()
 
 
 async def find_existing_fork(access_token: str, username: str) -> dict | None:
@@ -117,15 +115,15 @@ async def find_existing_fork(access_token: str, username: str) -> dict | None:
     single lookup — fetch that repo and keep it only if it's a genuine fork of
     our upstream. We don't chase collision-renamed forks; `enable` refuses to
     create one off the canonical name, so detection and creation stay in
-    lockstep. Any non-200 / network error yields None (saving stays off).
+    lockstep. Any non-200 (including a transfer redirect) / network error
+    yields None (saving stays off).
     """
     _, name = upstream_repo()
     url = f"{GITHUB_API_BASE}/repos/{username}/{name}"
-    async with aiohttp.ClientSession() as session:
-        resp = await session.get(url, headers=_auth_headers(access_token))
-        if resp.status != 200:
-            return None
-        repo = await resp.json()
+    resp = await http_client.client().get(url, headers=_auth_headers(access_token))
+    if resp.status_code != 200:
+        return None
+    repo = resp.json()
     if not is_genuine_fork(repo):
         return None
     # Confirm it's a fork of *our* upstream, not some other repo of the same
@@ -138,6 +136,28 @@ async def find_existing_fork(access_token: str, username: str) -> dict | None:
     return repo if upstream in forked_from else None
 
 
+async def _list_dir(fork_full_name: str, access_token: str, path: str) -> list[str]:
+    """List `.py` filenames (non-`_`-prefixed) in a fork directory, sorted.
+
+    Shared by `list_workspace` and `list_snapshots`. Returns an empty list if
+    the directory doesn't exist yet (404); other failures raise.
+    """
+    url = f"{GITHUB_API_BASE}/repos/{fork_full_name}/contents/{path}"
+    resp = await http_client.client().get(
+        url, headers=_auth_headers(access_token), params={"ref": WORKSPACE_BRANCH}
+    )
+    if resp.status_code == 404:
+        return []
+    await _ensure_ok(resp, f"list {path}")
+    return sorted(
+        item["name"]
+        for item in resp.json()
+        if item.get("type") == "file"
+        and item.get("name", "").endswith(".py")
+        and not item["name"].startswith("_")
+    )
+
+
 async def list_workspace(fork_full_name: str, access_token: str) -> list[str]:
     """List `.py` files under `notebooks/workspace/` in the user's fork.
 
@@ -147,28 +167,7 @@ async def list_workspace(fork_full_name: str, access_token: str) -> list[str]:
     `/__sg__/workspace/sync` pushes). Returns an empty list if the directory
     doesn't exist yet.
     """
-    url = f"{GITHUB_API_BASE}/repos/{fork_full_name}/contents/{WORKSPACE_CONTENTS_PATH}"
-    async with aiohttp.ClientSession() as session:
-        resp = await session.get(
-            url,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            params={"ref": WORKSPACE_BRANCH},
-        )
-        if resp.status == 404:
-            return []
-        resp.raise_for_status()
-        data = await resp.json()
-    return sorted(
-        item["name"]
-        for item in data
-        if item.get("type") == "file"
-        and item.get("name", "").endswith(".py")
-        and not item["name"].startswith("_")
-    )
+    return await _list_dir(fork_full_name, access_token, WORKSPACE_CONTENTS_PATH)
 
 
 async def list_snapshots(fork_full_name: str, access_token: str) -> list[str]:
@@ -180,24 +179,7 @@ async def list_snapshots(fork_full_name: str, access_token: str) -> list[str]:
     empty list if the directory doesn't exist yet. Mirrors `list_workspace`'s
     filtering (`.py`, non-`_`-prefixed) so the `.gitkeep` placeholder is skipped.
     """
-    url = f"{GITHUB_API_BASE}/repos/{fork_full_name}/contents/{SNAPSHOTS_CONTENTS_PATH}"
-    async with aiohttp.ClientSession() as session:
-        resp = await session.get(
-            url,
-            headers=_auth_headers(access_token),
-            params={"ref": WORKSPACE_BRANCH},
-        )
-        if resp.status == 404:
-            return []
-        resp.raise_for_status()
-        data = await resp.json()
-    return sorted(
-        item["name"]
-        for item in data
-        if item.get("type") == "file"
-        and item.get("name", "").endswith(".py")
-        and not item["name"].startswith("_")
-    )
+    return await _list_dir(fork_full_name, access_token, SNAPSHOTS_CONTENTS_PATH)
 
 
 async def get_repo_file(
@@ -205,7 +187,7 @@ async def get_repo_file(
 ) -> str | None:
     """Fetch any repo file's decoded UTF-8 source from the fork's `WORKSPACE_BRANCH`.
 
-    The generic reader `path` is the full repo-relative path. The
+    The generic reader: `path` is the full repo-relative path. The
     `get_workspace_notebook` / `get_snapshot_notebook` wrappers prefix their
     directory; `/workspace/copy` calls this directly to pull a shipped Workflows
     notebook out of the fork's source tree (under `src/stargazer/notebooks/`).
@@ -213,15 +195,13 @@ async def get_repo_file(
     so callers can fall back to defaults.
     """
     url = f"{GITHUB_API_BASE}/repos/{fork_full_name}/contents/{path}"
-    async with aiohttp.ClientSession() as session:
-        resp = await session.get(
-            url, headers=_auth_headers(access_token), params={"ref": WORKSPACE_BRANCH}
-        )
-        if resp.status == 404:
-            return None
-        resp.raise_for_status()
-        data = await resp.json()
-        return base64.b64decode(data["content"]).decode("utf-8")
+    resp = await http_client.client().get(
+        url, headers=_auth_headers(access_token), params={"ref": WORKSPACE_BRANCH}
+    )
+    if resp.status_code == 404:
+        return None
+    await _ensure_ok(resp, f"read {path}")
+    return base64.b64decode(resp.json()["content"]).decode("utf-8")
 
 
 async def get_workspace_notebook(
@@ -262,24 +242,40 @@ def _auth_headers(access_token: str) -> dict:
     }
 
 
-async def _ensure_ok(resp: aiohttp.ClientResponse, action: str) -> None:
+async def _ensure_ok(resp: httpx.Response, action: str) -> None:
     """Raise a descriptive error if `resp` failed, surfacing GitHub's reason.
 
-    `aiohttp`'s `raise_for_status` only carries the bare status line, which
-    hides the actual cause (e.g. missing scope, or `Resource not accessible`).
-    Pull GitHub's JSON `message` and the granted token scopes so launch /
-    create failures point at the real problem.
+    A bare status line hides the actual cause (e.g. missing scope, or
+    `Resource not accessible`). Pull GitHub's JSON `message` and the granted
+    token scopes so launch / create failures point at the real problem.
+
+    A 3xx counts as a failure: the shared client doesn't follow redirects, so
+    letting one through would hand the caller a redirect body to `.json()`
+    (a renamed/transferred repo would surface as a confusing parse error).
     """
-    if resp.status < 400:
+    if 200 <= resp.status_code < 300:
         return
     try:
-        detail = (await resp.json()).get("message", "")
+        detail = resp.json().get("message", "")
     except Exception:
-        detail = (await resp.text())[:200]
+        detail = resp.text[:200]
     scopes = resp.headers.get("X-OAuth-Scopes", "")
     raise RuntimeError(
-        f"{action}: GitHub {resp.status} ({detail}); token scopes=[{scopes}]"
+        f"{action}: GitHub {resp.status_code} ({detail}); token scopes=[{scopes}]"
     )
+
+
+def _reject_redirect(resp: httpx.Response, fork_full_name: str, action: str) -> None:
+    """Raise if GitHub answered with a redirect — never a writable fork path.
+
+    The shared client doesn't follow redirects, so a transferred/renamed repo
+    surfaces here as a 3xx instead of silently retargeting the upstream.
+    """
+    if 300 <= resp.status_code < 400:
+        raise RuntimeError(
+            f"{action}: {fork_full_name!r} redirected "
+            f"(HTTP {resp.status_code}) — not a writable fork path"
+        )
 
 
 async def _create_file(
@@ -310,20 +306,12 @@ async def _create_file(
         "branch": WORKSPACE_BRANCH,
     }
     url = f"{GITHUB_API_BASE}/repos/{fork_full_name}/contents/{path}"
-    async with aiohttp.ClientSession() as session:
-        resp = await session.put(
-            url,
-            headers=_auth_headers(access_token),
-            json=payload,
-            allow_redirects=False,
-        )
-        if 300 <= resp.status < 400:
-            raise RuntimeError(
-                f"{action}: {fork_full_name!r} redirected "
-                f"(HTTP {resp.status}) — not a writable fork path"
-            )
-        await _ensure_ok(resp, action)
-        return await resp.json()
+    resp = await http_client.client().put(
+        url, headers=_auth_headers(access_token), json=payload
+    )
+    _reject_redirect(resp, fork_full_name, action)
+    await _ensure_ok(resp, action)
+    return resp.json()
 
 
 async def create_workspace_notebook(
@@ -395,32 +383,24 @@ async def update_workspace_notebook(
         )
     path = f"{WORKSPACE_CONTENTS_PATH}/{filename}"
     url = f"{GITHUB_API_BASE}/repos/{fork_full_name}/contents/{path}"
-    async with aiohttp.ClientSession() as session:
-        head = await session.get(
-            url, headers=_auth_headers(access_token), params={"ref": WORKSPACE_BRANCH}
-        )
-        await _ensure_ok(head, "update notebook (lookup)")
-        sha = (await head.json())["sha"]
+    head = await http_client.client().get(
+        url, headers=_auth_headers(access_token), params={"ref": WORKSPACE_BRANCH}
+    )
+    await _ensure_ok(head, "update notebook (lookup)")
+    sha = head.json()["sha"]
 
-        payload = {
-            "message": message or f"workspace: update {filename}",
-            "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
-            "sha": sha,
-            "branch": WORKSPACE_BRANCH,
-        }
-        resp = await session.put(
-            url,
-            headers=_auth_headers(access_token),
-            json=payload,
-            allow_redirects=False,
-        )
-        if 300 <= resp.status < 400:
-            raise RuntimeError(
-                f"update notebook: {fork_full_name!r} redirected "
-                f"(HTTP {resp.status}) — not a writable fork path"
-            )
-        await _ensure_ok(resp, "update notebook")
-        return await resp.json()
+    payload = {
+        "message": message or f"workspace: update {filename}",
+        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+        "sha": sha,
+        "branch": WORKSPACE_BRANCH,
+    }
+    resp = await http_client.client().put(
+        url, headers=_auth_headers(access_token), json=payload
+    )
+    _reject_redirect(resp, fork_full_name, "update notebook")
+    await _ensure_ok(resp, "update notebook")
+    return resp.json()
 
 
 async def _delete_file(
@@ -444,33 +424,27 @@ async def _delete_file(
             f"refusing to write to the upstream source repo {fork_full_name!r}"
         )
     url = f"{GITHUB_API_BASE}/repos/{fork_full_name}/contents/{path}"
-    async with aiohttp.ClientSession() as session:
-        head = await session.get(
-            url, headers=_auth_headers(access_token), params={"ref": WORKSPACE_BRANCH}
-        )
-        if head.status == 404:
-            return False
-        await _ensure_ok(head, f"{action} (lookup)")
-        sha = (await head.json())["sha"]
+    head = await http_client.client().get(
+        url, headers=_auth_headers(access_token), params={"ref": WORKSPACE_BRANCH}
+    )
+    if head.status_code == 404:
+        return False
+    await _ensure_ok(head, f"{action} (lookup)")
+    sha = head.json()["sha"]
 
-        payload = {
-            "message": message,
-            "sha": sha,
-            "branch": WORKSPACE_BRANCH,
-        }
-        resp = await session.delete(
-            url,
-            headers=_auth_headers(access_token),
-            json=payload,
-            allow_redirects=False,
-        )
-        if 300 <= resp.status < 400:
-            raise RuntimeError(
-                f"{action}: {fork_full_name!r} redirected "
-                f"(HTTP {resp.status}) — not a writable fork path"
-            )
-        await _ensure_ok(resp, action)
-        return True
+    payload = {
+        "message": message,
+        "sha": sha,
+        "branch": WORKSPACE_BRANCH,
+    }
+    # DELETE with a JSON body needs the explicit request form — httpx's
+    # `.delete()` (rightly) takes no body.
+    resp = await http_client.client().request(
+        "DELETE", url, headers=_auth_headers(access_token), json=payload
+    )
+    _reject_redirect(resp, fork_full_name, action)
+    await _ensure_ok(resp, action)
+    return True
 
 
 async def delete_workspace_notebook(
