@@ -4,8 +4,8 @@ import pytest
 import scanpy as sc
 from conftest import SCRNA_FIXTURES_DIR
 
-from stargazer.tasks.scrna.find_markers import find_markers
 from stargazer.assets.scrna import AnnData
+from stargazer.tasks.scrna.find_markers import find_markers
 
 CLUSTERED_FIXTURE = SCRNA_FIXTURES_DIR / "clustered.h5ad"
 

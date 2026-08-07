@@ -9,6 +9,7 @@ To populate expected CIDs for test files, run:
 
 import pytest
 from conftest import FIXTURES_DIR, GENERAL_FIXTURES_DIR
+
 from stargazer.assets.asset import Asset
 from stargazer.utils.local_storage import LocalStorageClient
 from stargazer.utils.pinata import PinataClient

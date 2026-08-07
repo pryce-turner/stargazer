@@ -148,6 +148,7 @@ Example header for the scRNA tutorials:
 """..."""
 
 import marimo
+
 app = marimo.App(width="medium")
 # ...
 ```

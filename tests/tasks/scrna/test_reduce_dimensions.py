@@ -4,8 +4,8 @@ import pytest
 import scanpy as sc
 from conftest import SCRNA_FIXTURES_DIR
 
-from stargazer.tasks.scrna.reduce_dimensions import reduce_dimensions
 from stargazer.assets.scrna import AnnData
+from stargazer.tasks.scrna.reduce_dimensions import reduce_dimensions
 
 FEATURED_FIXTURE = SCRNA_FIXTURES_DIR / "featured.h5ad"
 

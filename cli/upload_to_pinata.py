@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from stargazer.assets.component import ComponentFile
+
 from stargazer.utils.pinata import PinataClient
 
 
@@ -24,7 +25,7 @@ async def upload_file(
     keyvalues: dict,
     client: PinataClient,
     update_config: bool = False,
-    config_path: Path = None,
+    config_path: Path | None = None,
 ):
     """Upload a single file to Pinata."""
 

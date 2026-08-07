@@ -100,7 +100,9 @@ class AlignmentFile(ComponentFile):
         if sorted is not None:
             self.keyvalues["sorted"] = sorted
         if duplicates_marked is not None:
-            self.keyvalues["duplicates_marked"] = "true" if duplicates_marked else "false"
+            self.keyvalues["duplicates_marked"] = (
+                "true" if duplicates_marked else "false"
+            )
         if bqsr_applied is not None:
             self.keyvalues["bqsr_applied"] = "true" if bqsr_applied else "false"
         if tool is not None:
@@ -160,11 +162,13 @@ class Reference:
     sequence_dictionary: SequenceDict | None = None
     aligner_index: list[AlignerIndex] = field(default_factory=list)
 
+
 @dataclass
 class Alignment:
     sample_id: str
     alignment: AlignmentFile | None = None
     index: AlignmentIndex | None = None
+
 
 @dataclass
 class Reads:
@@ -176,6 +180,7 @@ class Reads:
     @property
     def is_paired(self) -> bool:
         return self.r1 is not None and self.r2 is not None
+
 
 @dataclass
 class Variants:
@@ -205,9 +210,12 @@ Before:
 ```python
 sorted_alignment = Alignment(sample_id=alignment.sample_id)
 await sorted_alignment.update_alignment(
-    output_bam, format="bam", is_sorted=(sort_order == "coordinate"),
+    output_bam,
+    format="bam",
+    is_sorted=(sort_order == "coordinate"),
     duplicates_marked=alignment.has_duplicates_marked,
-    bqsr_applied=alignment.has_bqsr_applied, tool="gatk_sort_sam",
+    bqsr_applied=alignment.has_bqsr_applied,
+    tool="gatk_sort_sam",
 )
 await sorted_alignment.update_index(bam_index)
 ```

@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from conftest import GENERAL_FIXTURES_DIR
 
-from stargazer.tasks.general.bwa import bwa_index
 from stargazer.assets import AlignerIndex, Reference
+from stargazer.tasks.general.bwa import bwa_index
 
 
 @pytest.mark.asyncio

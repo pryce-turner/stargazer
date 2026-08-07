@@ -23,6 +23,7 @@ Create a session-scoped fixture that initializes Flyte once for all tests:
 import pytest
 import flyte
 
+
 @pytest.fixture(scope="session", autouse=True)
 def init_flyte_context():
     """Initialize Flyte context for all tests."""
@@ -44,10 +45,12 @@ import pytest
 import flyte
 from hello_world import greet
 
+
 @pytest.fixture(scope="module")
 def local_flyte():
     """Return a local run context for executing tasks."""
     return flyte.with_runcontext(mode="local")
+
 
 def test_hello_world_basic(local_flyte):
     """Test basic hello world functionality."""
@@ -73,6 +76,7 @@ import pytest
 from pathlib import Path
 from stargazer.assets import Reference
 from stargazer.tasks.samtools import samtools_faidx
+
 
 @pytest.mark.asyncio
 async def test_samtools_faidx():
@@ -128,6 +132,7 @@ from pathlib import Path
 from flyte.io import Dir
 import tempfile
 from dataclasses import dataclass, field
+
 
 @dataclass
 class CustomType:

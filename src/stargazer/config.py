@@ -23,7 +23,7 @@ import inspect
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import flyte
@@ -74,13 +74,14 @@ def log_execution() -> str:
     Warns if the git tree has uncommitted changes.
     """
     workflow = inspect.currentframe().f_back.f_code.co_name
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             capture_output=True,
             text=True,
+            check=False,  # missing/!git dir falls back to "unknown"
         )
         commit = result.stdout.strip() or "unknown"
 
@@ -88,6 +89,7 @@ def log_execution() -> str:
             ["git", "status", "--porcelain"],
             capture_output=True,
             text=True,
+            check=False,  # non-repo is tolerated, not fatal
         )
         if status.stdout.strip():
             commit += "-dirty"

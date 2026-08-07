@@ -101,7 +101,7 @@ def test_app_jwt_has_required_claims(app_env, rsa_keypair):
 
 def test_app_jwt_signed_rs256(app_env, rsa_keypair):
     """The JWT is RS256 and verifies against the app's public key."""
-    _private, public = rsa_keypair
+    _private, _public = rsa_keypair
     token = installation_tokens._app_jwt()
     assert jwt.get_unverified_header(token)["alg"] == "RS256"
     # A wrong key must fail verification.

@@ -146,11 +146,7 @@ async def sequential_workflow(data: InputType) -> OutputType:
 @gatk_env.task
 async def parallel_workflow(data: InputType) -> OutputType:
     # Independent operations run concurrently
-    results = await asyncio.gather(
-        task1(data),
-        task2(data),
-        task3(data)
-    )
+    results = await asyncio.gather(task1(data), task2(data), task3(data))
     # Combine results
     return await combine_task(results)
 ```
@@ -174,10 +170,8 @@ async def conditional_workflow(data: InputType, mode: str) -> OutputType:
 @gatk_env.task
 async def fanout_workflow(files: list[File]) -> CombinedOutput:
     # Process each file independently
-    results = await asyncio.gather(*[
-        process_file(f) for f in files
-    ])
-    
+    results = await asyncio.gather(*[process_file(f) for f in files])
+
     # Combine all results
     return await merge_results(results)
 ```
@@ -213,6 +207,7 @@ from stargazer.tasks.{module} import {tasks}
 ```python
 from stargazer.tasks import hydrate
 
+
 @gatk_env.task
 async def index_reference_workflow(ref_name: str) -> Reference:
     refs = await hydrate({"type": "reference", "build": ref_name})
@@ -227,10 +222,7 @@ async def index_reference_workflow(ref_name: str) -> Reference:
 ### Alignment Pipeline
 ```python
 @gatk_env.task
-async def alignment_workflow(
-    fastq: Fastq,
-    ref: Reference
-) -> Alignment:
+async def alignment_workflow(fastq: Fastq, ref: Reference) -> Alignment:
     aligned = await align_with_bwa(fastq, ref)
     sorted_bam = await sort_bam(aligned)
     marked = await mark_duplicates(sorted_bam)
@@ -240,10 +232,7 @@ async def alignment_workflow(
 ### Variant Calling
 ```python
 @gatk_env.task
-async def variant_calling_workflow(
-    alignment: Alignment,
-    ref: Reference
-) -> Variants:
+async def variant_calling_workflow(alignment: Alignment, ref: Reference) -> Variants:
     recalibrated = await bqsr(alignment, ref)
     variants = await call_variants(recalibrated, ref)
     filtered = await filter_variants(variants)

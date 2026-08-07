@@ -7,8 +7,8 @@ import shutil
 import pytest
 from conftest import GATK_FIXTURES_DIR
 
-from stargazer.tasks.gatk.sort_sam import sort_sam
 from stargazer.assets import Alignment
+from stargazer.tasks.gatk.sort_sam import sort_sam
 
 
 @pytest.mark.asyncio

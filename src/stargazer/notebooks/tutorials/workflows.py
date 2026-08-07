@@ -64,7 +64,6 @@ def _():
         remotely.
         """
     )
-    return
 
 
 @app.cell
@@ -85,7 +84,6 @@ def _():
         `SampleSheet` assets to run it against.
         """
     )
-    return
 
 
 @app.cell
@@ -117,7 +115,6 @@ def _():
         scheduled in parallel — **the same code, no changes.**
         """
     )
-    return
 
 
 @app.function
@@ -183,7 +180,6 @@ def _():
         through a live console URL.
         """
     )
-    return
 
 
 if __name__ == "__main__":

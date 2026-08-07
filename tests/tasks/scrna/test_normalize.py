@@ -4,8 +4,8 @@ import pytest
 import scanpy as sc
 from conftest import SCRNA_FIXTURES_DIR
 
-from stargazer.tasks.scrna.normalize import normalize
 from stargazer.assets.scrna import AnnData
+from stargazer.tasks.scrna.normalize import normalize
 
 QC_FILTERED_FIXTURE = SCRNA_FIXTURES_DIR / "qc_filtered.h5ad"
 

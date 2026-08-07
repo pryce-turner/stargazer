@@ -159,7 +159,10 @@ def _sync_workspace() -> tuple[dict, int]:
 
     def git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["git", "-C", str(WORKSPACE_ROOT), *args], capture_output=True, text=True
+            ["git", "-C", str(WORKSPACE_ROOT), *args],
+            capture_output=True,
+            text=True,
+            check=False,  # callers inspect returncode themselves
         )
 
     add = git("add", WORKSPACE_REL)
@@ -212,6 +215,7 @@ def _git_push() -> tuple[bool, str]:
         }
         push = subprocess.run(
             ["git", "-C", str(WORKSPACE_ROOT), "push", "origin", "HEAD:main"],
+            check=False,  # returncode inspected below
             capture_output=True,
             text=True,
             env=env,

@@ -13,6 +13,7 @@ class Alignment(Asset):
     _field_types = {"duplicates_marked": bool, "bqsr_applied": bool}
     _field_defaults = {"sample_id": ""}
 
+
 # After
 @dataclass
 class Alignment(Asset):
@@ -189,6 +190,7 @@ import typing
 
 _MISSING = object()
 
+
 def __init_subclass__(cls, **kwargs):
     super().__init_subclass__(**kwargs)
     ak = cls.__dict__.get("_asset_key", "")
@@ -223,7 +225,9 @@ def __setattr__(self, name: str, value: Any) -> None:
         return
     # Enforce allowed keys — only on subclasses that declare _asset_key
     if self._asset_key:
-        allowed = frozenset(self._field_defaults) | frozenset(self._field_types) | {"asset"}
+        allowed = (
+            frozenset(self._field_defaults) | frozenset(self._field_types) | {"asset"}
+        )
         if name not in allowed:
             raise ValueError(
                 f"{type(self).__name__} does not allow keyvalue '{name}'. "
@@ -307,9 +311,11 @@ This gives enforcement at the MCP boundary — unknown keys are silently dropped
 If we want strict rejection instead, add a check before construction:
 
 ```python
-    unknown = set(keyvalues) - declared - {"asset"}
-    if unknown:
-        raise ValueError(f"Unknown keys for {asset_key}: {unknown}. Allowed: {sorted(declared)}")
+unknown = set(keyvalues) - declared - {"asset"}
+if unknown:
+    raise ValueError(
+        f"Unknown keys for {asset_key}: {unknown}. Allowed: {sorted(declared)}"
+    )
 ```
 
 ### 4. Asset Subclasses
@@ -323,6 +329,7 @@ class Reference(Asset):
     _asset_key: ClassVar[str] = "reference"
     build: str = ""
 
+
 @dataclass
 class ReferenceIndex(Asset):
     _asset_key: ClassVar[str] = "reference_index"
@@ -330,12 +337,14 @@ class ReferenceIndex(Asset):
     tool: str = ""
     reference_cid: str = ""
 
+
 @dataclass
 class SequenceDict(Asset):
     _asset_key: ClassVar[str] = "sequence_dict"
     build: str = ""
     tool: str = ""
     reference_cid: str = ""
+
 
 @dataclass
 class AlignerIndex(Asset):
@@ -352,6 +361,7 @@ class R1(Asset):
     _asset_key: ClassVar[str] = "r1"
     sample_id: str = ""
     mate_cid: str = ""
+
 
 @dataclass
 class R2(Asset):
@@ -374,11 +384,13 @@ class Alignment(Asset):
     reference_cid: str = ""
     r1_cid: str = ""
 
+
 @dataclass
 class AlignmentIndex(Asset):
     _asset_key: ClassVar[str] = "alignment_index"
     sample_id: str = ""
     alignment_cid: str = ""
+
 
 @dataclass
 class BQSRReport(Asset):
@@ -386,6 +398,7 @@ class BQSRReport(Asset):
     sample_id: str = ""
     tool: str = ""
     alignment_cid: str = ""
+
 
 @dataclass
 class DuplicateMetrics(Asset):
@@ -408,11 +421,13 @@ class Variants(Asset):
     sample_count: int = 0
     source_samples: list = None
 
+
 @dataclass
 class VariantsIndex(Asset):
     _asset_key: ClassVar[str] = "variants_index"
     sample_id: str = ""
     variants_cid: str = ""
+
 
 @dataclass
 class KnownSites(Asset):
@@ -423,6 +438,7 @@ class KnownSites(Asset):
     training: str = "false"
     truth: str = "false"
     prior: str = "10"
+
 
 @dataclass
 class VQSRModel(Asset):

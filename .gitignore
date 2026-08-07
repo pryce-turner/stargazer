@@ -185,3 +185,7 @@ tests/.secrets/
 # Marimo cache
 src/stargazer/notebooks/**/__marimo__/
 .codex/config.toml
+
+# Frozen v1 snapshot, kept out of the repo. Was tracked reference material;
+# untracked deliberately — nothing imports it and it is not maintained.
+.opencode/reference/stargazer_flyte_v1/

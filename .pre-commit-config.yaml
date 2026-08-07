@@ -1,6 +1,11 @@
 repos:
+  # Keep this rev and the `ruff` pin in pyproject's dev group on the SAME
+  # version. The hook builds its own isolated env, so if the two drift, the
+  # pre-commit gate and `uv run ruff` enforce different rule sets — which is
+  # exactly what happened between 0.14 and 0.16 (default selection went from
+  # 59 rules to 413). Bump both together.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.10
+    rev: v0.16.2
     hooks:
       - id: ruff
         args: [--fix]

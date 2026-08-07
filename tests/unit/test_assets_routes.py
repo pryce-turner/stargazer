@@ -19,7 +19,6 @@ from fastapi.testclient import TestClient
 from app.admin_app import asgi_app
 from app.session import SESSION_COOKIE, SessionData, create_session_cookie
 
-
 SECRET = "test-session-secret"
 JWT = "test-pinata-jwt"
 

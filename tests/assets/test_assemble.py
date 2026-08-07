@@ -1,11 +1,12 @@
 """Tests for assemble() — storage query to specialized asset list."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from stargazer.assets.asset import assemble
-from stargazer.assets.reference import Reference, ReferenceIndex, AlignerIndex
 from stargazer.assets.reads import R1, R2
+from stargazer.assets.reference import AlignerIndex, Reference, ReferenceIndex
 
 
 def raw(cid, **kv):

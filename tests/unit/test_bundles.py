@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import stargazer.utils.local_storage as _storage_mod
-from stargazer.bundles import fetch_bundle, list_bundles, _load_manifest
+from stargazer.bundles import _load_manifest, fetch_bundle, list_bundles
 from stargazer.utils.local_storage import LocalStorageClient
 
 

@@ -181,12 +181,12 @@ from stargazer.assets.vqsr import RecalibrationModel, RecalFile, TranchesFile
 Add to `__all__`:
 ```python
 # Reports / intermediates
-"BQSRReport",
-"DuplicateMetrics",
+("BQSRReport",)
+("DuplicateMetrics",)
 # VQSR model
-"RecalibrationModel",
-"RecalFile",
-"TranchesFile",
+("RecalibrationModel",)
+("RecalFile",)
+("TranchesFile",)
 ```
 
 ---
@@ -223,6 +223,8 @@ Remove `from stargazer.assets.component import ComponentFile` if it becomes unus
 Before:
 ```python
 from stargazer.assets.component import ComponentFile
+
+
 async def apply_bqsr(alignment, ref, recal_report: ComponentFile) -> Alignment:
     await _storage.default_client.download(recal_report)
 ```
@@ -230,6 +232,8 @@ async def apply_bqsr(alignment, ref, recal_report: ComponentFile) -> Alignment:
 After:
 ```python
 from stargazer.assets.reports import BQSRReport
+
+
 async def apply_bqsr(alignment, ref, recal_report: BQSRReport) -> Alignment:
     await _storage.default_client.download(recal_report)
 ```
@@ -241,8 +245,13 @@ No logic changes — `recal_report.path` works identically on `BQSRReport`.
 Before:
 ```python
 from pathlib import Path
-async def analyze_covariates(before_report: Path, after_report: Path | None = None) -> Path:
-    if not before_report.exists(): ...
+
+
+async def analyze_covariates(
+    before_report: Path, after_report: Path | None = None
+) -> Path:
+    if not before_report.exists():
+        ...
     output_dir = before_report.parent
     plots_file = output_dir / f"{before_report.stem}_plots.pdf"
     cmd = ["gatk", "AnalyzeCovariates", "-before", str(before_report), ...]
@@ -252,6 +261,8 @@ After:
 ```python
 import stargazer.utils.storage as _storage
 from stargazer.assets.reports import BQSRReport
+
+
 async def analyze_covariates(
     before_report: BQSRReport,
     after_report: BQSRReport | None = None,
@@ -262,12 +273,21 @@ async def analyze_covariates(
 
     if not before_report.path or not before_report.path.exists():
         raise FileNotFoundError(f"Before report not found: {before_report.path}")
-    if after_report is not None and (not after_report.path or not after_report.path.exists()):
+    if after_report is not None and (
+        not after_report.path or not after_report.path.exists()
+    ):
         raise FileNotFoundError(f"After report not found: {after_report.path}")
 
     output_dir = before_report.path.parent
     plots_file = output_dir / f"{before_report.path.stem}_plots.pdf"
-    cmd = ["gatk", "AnalyzeCovariates", "-before", str(before_report.path), "-plots", str(plots_file)]
+    cmd = [
+        "gatk",
+        "AnalyzeCovariates",
+        "-before",
+        str(before_report.path),
+        "-plots",
+        str(plots_file),
+    ]
     if after_report is not None:
         cmd.extend(["-after", str(after_report.path)])
     ...
@@ -309,6 +329,8 @@ Remove `from pathlib import Path` — output paths are local temporaries, no lon
 Before:
 ```python
 from pathlib import Path
+
+
 async def apply_vqsr(
     vcf: Variants,
     recal_file: Path,
@@ -317,15 +339,28 @@ async def apply_vqsr(
     mode: str = "SNP",
     truth_sensitivity_filter_level: float = 99.0,
 ) -> Variants:
-    if not recal_file.exists(): ...
-    if not tranches_file.exists(): ...
+    if not recal_file.exists():
+        ...
+    if not tranches_file.exists():
+        ...
     ...
-    cmd = [..., "--recal-file", str(recal_file), "--tranches-file", str(tranches_file), "--mode", mode, ...]
+    cmd = [
+        ...,
+        "--recal-file",
+        str(recal_file),
+        "--tranches-file",
+        str(tranches_file),
+        "--mode",
+        mode,
+        ...,
+    ]
 ```
 
 After:
 ```python
 from stargazer.assets.vqsr import RecalibrationModel
+
+
 async def apply_vqsr(
     vcf: Variants,
     model: RecalibrationModel,
@@ -339,7 +374,16 @@ async def apply_vqsr(
         raise ValueError("RecalibrationModel has no tranches file")
     mode = model.mode.upper()
     ...
-    cmd = [..., "--recal-file", str(model.recal.path), "--tranches-file", str(model.tranches.path), "--mode", mode, ...]
+    cmd = [
+        ...,
+        "--recal-file",
+        str(model.recal.path),
+        "--tranches-file",
+        str(model.tranches.path),
+        "--mode",
+        mode,
+        ...,
+    ]
 ```
 
 `mode: str` parameter is removed — read from `model.mode` instead.
@@ -349,6 +393,7 @@ async def apply_vqsr(
 Before:
 ```python
 from stargazer.assets.component import ComponentFile
+
 if metrics_file.exists():
     metrics_comp = ComponentFile(
         path=metrics_file,
@@ -360,9 +405,12 @@ if metrics_file.exists():
 After:
 ```python
 from stargazer.assets.reports import DuplicateMetrics
+
 if metrics_file.exists():
     metrics_comp = DuplicateMetrics()
-    await metrics_comp.update(metrics_file, sample_id=alignment.sample_id, tool="gatk_mark_duplicates")
+    await metrics_comp.update(
+        metrics_file, sample_id=alignment.sample_id, tool="gatk_mark_duplicates"
+    )
 ```
 
 Return signature (`-> Alignment`) is unchanged.
@@ -450,11 +498,13 @@ Change the assertion:
 ```python
 # Before
 from stargazer.assets.component import ComponentFile
+
 assert isinstance(recal_report, ComponentFile)
 assert recal_report.keyvalues.get("type") == "bqsr_report"
 
 # After
 from stargazer.assets.reports import BQSRReport
+
 assert isinstance(recal_report, BQSRReport)
 assert recal_report.keyvalues.get("type") == "bqsr_report"
 assert recal_report.keyvalues.get("component") == "report"

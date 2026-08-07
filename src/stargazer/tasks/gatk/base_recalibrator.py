@@ -7,8 +7,8 @@ spec: [docs/architecture/tasks.md](../architecture/tasks.md)
 """
 
 import stargazer.utils.local_storage as _storage
-from stargazer.config import gatk_env, logger
 from stargazer.assets import Alignment, BQSRReport, KnownSites, Reference
+from stargazer.config import gatk_env, logger
 from stargazer.utils import _run
 
 

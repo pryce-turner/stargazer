@@ -53,7 +53,6 @@ def _():
         tutorials reuse this very class.
         """
     )
-    return
 
 
 @app.cell
@@ -88,7 +87,6 @@ def _():
         the file in storage and the storage layer is queryable.
         """
     )
-    return
 
 
 @app.cell
@@ -116,7 +114,6 @@ def _():
         where it came from*, not by where it happens to sit on disk.
         """
     )
-    return
 
 
 @app.cell
@@ -155,7 +152,6 @@ def _():
         materialized lazily.
         """
     )
-    return
 
 
 @app.cell
@@ -200,7 +196,6 @@ def _():
             mo.ui.table(_rows, selection=None),
         ]
     )
-    return
 
 
 @app.cell
@@ -227,7 +222,6 @@ def _():
         `from_keyvalues()` — older records may not have newer fields.
         """
     )
-    return
 
 
 @app.class_definition
@@ -261,7 +255,6 @@ def _():
         Python type from a flat storage record later.
         """
     )
-    return
 
 
 @app.cell
@@ -277,7 +270,6 @@ def _():
         `json.dumps`'d. `from_keyvalues()` does the inverse.
         """
     )
-    return
 
 
 @app.cell
@@ -340,7 +332,6 @@ def _(rehydrated, sheet):
         see real Python types.
         """
     )
-    return
 
 
 @app.cell
@@ -363,7 +354,6 @@ def _():
         We'll write a tiny CSV to a temp file and push it through.
         """
     )
-    return
 
 
 @app.cell
@@ -420,7 +410,6 @@ def _():
         conventions, no folder scanning.
         """
     )
-    return
 
 
 @app.cell
@@ -451,7 +440,6 @@ async def _(uploaded_sheet):
         bytes, and read `sheet.path`.
         """
     )
-    return
 
 
 @app.cell
@@ -499,7 +487,6 @@ def _():
         `sample_sheet_cid` and rides along automatically.
         """
     )
-    return
 
 
 @app.cell
@@ -531,7 +518,6 @@ def _():
         by CID with no path coordination at all.
         """
     )
-    return
 
 
 @app.cell
@@ -566,7 +552,6 @@ def _():
         next.
         """
     )
-    return
 
 
 if __name__ == "__main__":

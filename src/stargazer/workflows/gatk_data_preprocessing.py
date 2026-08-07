@@ -11,16 +11,16 @@ References:
 spec: [docs/architecture/workflows.md](../architecture/workflows.md)
 """
 
-from stargazer.config import gatk_env, log_execution
-from stargazer.assets import Alignment, R1, R2, Reference
+from stargazer.assets import R1, R2, Alignment, Reference
 from stargazer.assets.asset import assemble
+from stargazer.config import gatk_env, log_execution
 from stargazer.tasks import (
-    samtools_faidx,
-    create_sequence_dictionary,
     bwa_mem2_index,
     bwa_mem2_mem,
-    sort_sam,
+    create_sequence_dictionary,
     mark_duplicates,
+    samtools_faidx,
+    sort_sam,
 )
 
 

@@ -64,20 +64,27 @@ Create `src/stargazer/utils/storage.py` with a `Protocol` class.
 from typing import Protocol, Optional
 from pathlib import Path
 
+
 class StorageClient(Protocol):
     local_dir: Path
 
     async def upload_file(
-        self, path: Path, keyvalues: Optional[dict[str, str]] = None,
+        self,
+        path: Path,
+        keyvalues: Optional[dict[str, str]] = None,
         public: Optional[bool] = None,
     ) -> IpFile: ...
 
     async def download_file(
-        self, ipfile: IpFile, dest: Optional[Path] = None,
+        self,
+        ipfile: IpFile,
+        dest: Optional[Path] = None,
     ) -> IpFile: ...
 
     async def query_files(
-        self, keyvalues: dict[str, str], public: Optional[bool] = None,
+        self,
+        keyvalues: dict[str, str],
+        public: Optional[bool] = None,
     ) -> list[IpFile]: ...
 
     async def delete_file(self, ipfile: IpFile) -> None: ...
@@ -114,6 +121,7 @@ def get_client() -> StorageClient:
     if local_only_env in ("1", "true", "yes"):
         return LocalStorageClient()
     return PinataClient()
+
 
 default_client: StorageClient = get_client()
 ```

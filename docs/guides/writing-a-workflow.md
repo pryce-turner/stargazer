@@ -17,10 +17,13 @@ from stargazer.tasks.bwa import align_with_bwa
 
 pipeline_env = flyte.TaskEnvironment(name="my_pipeline")
 
+
 @pipeline_env.task
 async def my_pipeline(build: str, sample_id: str) -> Variants:
     """One-line description of the pipeline."""
-    assets = await assemble(build=build, sample_id=sample_id, asset=["reference", "r1", "r2"])
+    assets = await assemble(
+        build=build, sample_id=sample_id, asset=["reference", "r1", "r2"]
+    )
 
     ref = next(a for a in assets if isinstance(a, Reference))
     r1 = next(a for a in assets if isinstance(a, R1))

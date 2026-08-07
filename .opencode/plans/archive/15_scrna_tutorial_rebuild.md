@@ -69,7 +69,10 @@ These are real selling points but each one is a separate concept; bundling them 
 
   ```python
   run = flyte.with_runcontext(mode="local").run(
-      preprocess, raw=raw_asset, max_pct_mt=20.0, n_top_genes=2000,
+      preprocess,
+      raw=raw_asset,
+      max_pct_mt=20.0,
+      n_top_genes=2000,
   )
   reduced_local = run.outputs()
   ```
@@ -84,7 +87,10 @@ These are real selling points but each one is a separate concept; bundling them 
 
   ```python
   remote_run = flyte.run(
-      preprocess, raw=raw_asset, max_pct_mt=20.0, n_top_genes=2000,
+      preprocess,
+      raw=raw_asset,
+      max_pct_mt=20.0,
+      n_top_genes=2000,
   )
   mo.output.append(mo.md(f"[Watch on console]({remote_run.url})"))
   remote_run.wait()

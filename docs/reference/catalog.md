@@ -4,31 +4,31 @@
 
 | Name | Description | Parameters |
 |------|-------------|------------|
-| `samtools_faidx` | Create a FASTA index (.fai file) using samtools faidx. | `ref` (`Reference`) |
-| `create_sequence_dictionary` | Create a sequence dictionary (.dict file) using GATK CreateSequenceDictionary. | `ref` (`Reference`) |
+| `apply_bqsr` | Apply Base Quality Score Recalibration to a BAM file. | `alignment` (`Alignment`), `ref` (`Reference`), `bqsr_report` (`BQSRReport`) |
+| `apply_vqsr` | Apply VQSR recalibration to a VCF using GATK ApplyVQSR. | `vcf` (`Variants`), `ref` (`Reference`), `vqsr_model` (`VQSRModel`), `truth_sensitivity_filter_level` (`float | NoneType`) |
+| `base_recalibrator` | Generate a Base Quality Score Recalibration report. | `alignment` (`Alignment`), `ref` (`Reference`), `known_sites` (`list[KnownSites]`) |
 | `bwa_index` | Create BWA index files for a reference genome using bwa index. | `ref` (`Reference`) |
 | `bwa_mem` | Align FASTQ reads to reference genome using BWA-MEM. | `ref` (`Reference`), `r1` (`R1`), `r2` (`R2 | NoneType`), `read_group` (`dict[str, str] | NoneType`) |
 | `bwa_mem2_index` | Create BWA-MEM2 index files for a reference genome. | `ref` (`Reference`) |
 | `bwa_mem2_mem` | Align FASTQ reads to reference genome using BWA-MEM2. | `ref` (`Reference`), `r1` (`R1`), `r2` (`R2 | NoneType`), `read_group` (`dict[str, str] | NoneType`) |
-| `sort_sam` | Sort a SAM/BAM file. | `alignment` (`Alignment`), `sort_order` (`str`) |
+| `combine_gvcfs` | Combine multiple per-sample GVCFs into a single multi-sample GVCF. | `gvcfs` (`list[Variants]`), `ref` (`Reference`), `cohort_id` (`str`) |
+| `create_sequence_dictionary` | Create a sequence dictionary (.dict file) using GATK CreateSequenceDictionary. | `ref` (`Reference`) |
+| `haplotype_caller` | Call germline variants in GVCF mode using GATK HaplotypeCaller. | `alignment` (`Alignment`), `ref` (`Reference`) |
+| `index_feature_file` | Index a VCF file using GATK IndexFeatureFile. | `known_sites` (`KnownSites`) |
+| `joint_call_gvcfs` | Consolidate GVCFs into GenomicsDB and joint-genotype in a single task. | `gvcfs` (`list[Variants]`), `ref` (`Reference`), `intervals` (`list[str]`), `cohort_id` (`str`) |
 | `mark_duplicates` | Mark duplicate reads in a BAM file. | `alignment` (`Alignment`) |
 | `merge_bam_alignment` | Merge alignment data from aligned BAM with data in unmapped BAM. | `aligned_bam` (`Alignment`), `unmapped_bam` (`Alignment`), `ref` (`Reference`) |
-| `index_feature_file` | Index a VCF file using GATK IndexFeatureFile. | `known_sites` (`KnownSites`) |
-| `base_recalibrator` | Generate a Base Quality Score Recalibration report. | `alignment` (`Alignment`), `ref` (`Reference`), `known_sites` (`list[KnownSites]`) |
-| `apply_bqsr` | Apply Base Quality Score Recalibration to a BAM file. | `alignment` (`Alignment`), `ref` (`Reference`), `bqsr_report` (`BQSRReport`) |
-| `haplotype_caller` | Call germline variants in GVCF mode using GATK HaplotypeCaller. | `alignment` (`Alignment`), `ref` (`Reference`) |
-| `joint_call_gvcfs` | Consolidate GVCFs into GenomicsDB and joint-genotype in a single task. | `gvcfs` (`list[Variants]`), `ref` (`Reference`), `intervals` (`list[str]`), `cohort_id` (`str`) |
-| `combine_gvcfs` | Combine multiple per-sample GVCFs into a single multi-sample GVCF. | `gvcfs` (`list[Variants]`), `ref` (`Reference`), `cohort_id` (`str`) |
+| `samtools_faidx` | Create a FASTA index (.fai file) using samtools faidx. | `ref` (`Reference`) |
+| `sort_sam` | Sort a SAM/BAM file. | `alignment` (`Alignment`), `sort_order` (`str`) |
 | `variant_recalibrator` | Build a VQSR recalibration model using GATK VariantRecalibrator. | `vcf` (`Variants`), `ref` (`Reference`), `resources` (`list[KnownSites]`), `mode` (`str`) |
-| `apply_vqsr` | Apply VQSR recalibration to a VCF using GATK ApplyVQSR. | `vcf` (`Variants`), `ref` (`Reference`), `vqsr_model` (`VQSRModel`), `truth_sensitivity_filter_level` (`float | NoneType`) |
 
 ## Workflows
 
 | Name | Description | Parameters |
 |------|-------------|------------|
+| `germline_short_variant_discovery` | End-to-end germline short variant discovery from raw reads. | `build` (`str`), `sample_ids` (`list[str]`), `cohort_id` (`str`) |
 | `prepare_reference` | Prepare reference genome for alignment and variant calling. | `build` (`str`) |
 | `preprocess_sample` | Pre-process a single sample's reads for variant calling. | `build` (`str`), `sample_id` (`str`) |
-| `germline_short_variant_discovery` | End-to-end germline short variant discovery from raw reads. | `build` (`str`), `sample_ids` (`list[str]`), `cohort_id` (`str`) |
 | `scrna_clustering_pipeline` | End-to-end scRNA-seq clustering pipeline. | `sample_id` (`str`), `organism` (`str`), `n_top_genes` (`int`), `resolution` (`float`), `max_pct_mt` (`float`) |
 
 ## Asset Types

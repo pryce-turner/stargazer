@@ -2,17 +2,17 @@
 
 from pathlib import Path
 
-from stargazer.assets.asset import Asset
 from stargazer.assets import specialize
+from stargazer.assets.alignment import Alignment, AlignmentIndex
+from stargazer.assets.asset import Asset
+from stargazer.assets.reads import R1, R2
 from stargazer.assets.reference import (
+    AlignerIndex,
     Reference,
     ReferenceIndex,
     SequenceDict,
-    AlignerIndex,
 )
-from stargazer.assets.alignment import Alignment, AlignmentIndex
 from stargazer.assets.variants import Variants, VariantsIndex
-from stargazer.assets.reads import R1, R2
 
 
 def record(cid="Qm", path=None, **kv) -> dict:

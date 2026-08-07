@@ -35,9 +35,11 @@ import flyte
 
 env = flyte.TaskEnvironment(name="hello")
 
+
 @env.task
 async def say_hello(name: str) -> str:
     return f"Hello, {name}!"
+
 
 if __name__ == "__main__":
     flyte.init_from_config()
@@ -54,6 +56,7 @@ async def async_task(x: int) -> int:
     await asyncio.sleep(1)
     return x * 2
 
+
 # Sync task (for CPU-bound operations)
 @env.task
 def sync_task(x: int) -> int:
@@ -67,7 +70,8 @@ Tasks can call other tasks directly—no special constructs needed:
 ```python
 @env.task
 async def square(x: int) -> int:
-    return x ** 2
+    return x**2
+
 
 @env.task
 async def workflow(n: int) -> list[int]:
@@ -87,7 +91,7 @@ flyte.init(
     endpoint="dns:///localhost:8090",
     insecure=True,
     org="myorg",
-    project="myproject", 
+    project="myproject",
     domain="development",
 )
 
@@ -132,11 +136,11 @@ env = flyte.TaskEnvironment(
 env = flyte.TaskEnvironment(
     name="gpu_env",
     resources=flyte.Resources(
-        cpu="2",                    # Or cpu=(1, 4) for min/max
-        memory="4Gi",               # Or memory=("1Gi", "8Gi")
-        gpu="A100 80G:1",           # GPU type and count
-        disk="10Gi",                # Ephemeral storage
-        shm="auto",                 # Shared memory (auto or explicit)
+        cpu="2",  # Or cpu=(1, 4) for min/max
+        memory="4Gi",  # Or memory=("1Gi", "8Gi")
+        gpu="A100 80G:1",  # GPU type and count
+        disk="10Gi",  # Ephemeral storage
+        shm="auto",  # Shared memory (auto or explicit)
     ),
 )
 ```
@@ -282,12 +286,9 @@ env = flyte.TaskEnvironment(
 )
 
 # Private PyPI
-image = (
-    flyte.Image.from_debian_base()
-    .with_pip_packages(
-        "my-private-package",
-        extra_index_url="https://pypi.mycompany.com/simple",
-    )
+image = flyte.Image.from_debian_base().with_pip_packages(
+    "my-private-package",
+    extra_index_url="https://pypi.mycompany.com/simple",
 )
 ```
 
@@ -314,6 +315,7 @@ async def simple_types(
 ```python
 from typing import List, Dict, Optional
 
+
 @env.task
 async def collections(
     int_list: List[int],
@@ -329,18 +331,22 @@ async def collections(
 from dataclasses import dataclass
 from typing import List
 
+
 @dataclass
 class Request:
     feature_a: float
     feature_b: float
 
-@dataclass  
+
+@dataclass
 class BatchRequest:
     requests: List[Request]
+
 
 @env.task
 async def process(req: Request) -> float:
     return req.feature_a + req.feature_b
+
 
 @env.task
 async def batch_process(batch: BatchRequest) -> List[float]:
@@ -352,12 +358,14 @@ async def batch_process(batch: BatchRequest) -> List[float]:
 ```python
 from pydantic import BaseModel
 
+
 class PredictionResult(BaseModel):
     score: float
     label: str
-    
+
     class Config:
         arbitrary_types_allowed = True  # Required for File/Dir types
+
 
 @env.task
 async def predict(data: str) -> PredictionResult:
@@ -369,10 +377,12 @@ async def predict(data: str) -> PredictionResult:
 ```python
 from enum import Enum
 
+
 class Status(Enum):
     PENDING = "pending"
     COMPLETED = "completed"
     FAILED = "failed"
+
 
 @env.task
 async def check_status(s: Status) -> Status:
@@ -383,6 +393,7 @@ async def check_status(s: Status) -> Status:
 
 ```python
 from typing import Union
+
 
 @env.task
 async def flexible_input(data: Union[str, int, List[int]]) -> str:
@@ -395,9 +406,11 @@ async def flexible_input(data: Union[str, int, List[int]]) -> str:
 import pandas as pd
 from typing import Annotated
 
+
 @env.task
 async def create_df() -> pd.DataFrame:
     return pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+
 
 # With format hint
 @env.task
@@ -414,14 +427,16 @@ async def create_csv_df() -> Annotated[flyte.io.DataFrame, "csv"]:
 ```python
 from flyte.io import File
 
+
 @env.task
 async def create_file() -> File:
     # Create local file
     with open("output.txt", "w") as f:
         f.write("Hello, World!")
-    
+
     # Upload to remote storage
     return await File.from_local("output.txt")
+
 
 @env.task
 async def read_file(f: File) -> str:
@@ -429,12 +444,14 @@ async def read_file(f: File) -> str:
     async with f.open("rb") as fh:
         content = await fh.read()
         return content.decode("utf-8")
-    
+
+
 @env.task
 async def download_file(f: File) -> str:
     # Download to local path
     local_path = await f.download()
     return local_path
+
 
 @env.task
 async def stream_write() -> File:
@@ -455,6 +472,7 @@ def sync_file_ops() -> File:
         fh.write(b"content")
     return f
 
+
 @env.task
 def sync_download(f: File) -> str:
     return f.download_sync()
@@ -465,19 +483,22 @@ def sync_download(f: File) -> str:
 ```python
 from flyte.io import Dir
 
+
 @env.task
 async def create_dir() -> Dir:
     import tempfile, os
+
     tmpdir = tempfile.mkdtemp()
-    
+
     # Create files in directory
     with open(os.path.join(tmpdir, "file1.txt"), "w") as f:
         f.write("content1")
     with open(os.path.join(tmpdir, "file2.txt"), "w") as f:
         f.write("content2")
-    
+
     # Upload directory
     return await Dir.from_local(tmpdir)
+
 
 @env.task
 async def read_dir(d: Dir) -> list[str]:
@@ -487,10 +508,12 @@ async def read_dir(d: Dir) -> list[str]:
             contents.append((await fh.read()).decode())
     return contents
 
+
 @env.task
 async def list_files(d: Dir) -> list[str]:
     files = await d.list_files()
     return [f.name for f in files]
+
 
 @env.task
 async def get_specific_file(d: Dir, name: str) -> File:
@@ -523,15 +546,17 @@ async def use_existing() -> str:
 ```python
 import asyncio
 
+
 @env.task
 async def process_item(x: int) -> int:
     return x * 2
+
 
 @env.task
 async def parallel_processing(items: list[int]) -> list[int]:
     # Create coroutines
     coros = [process_item(x) for x in items]
-    
+
     # Execute in parallel
     return await asyncio.gather(*coros)
 ```
@@ -555,7 +580,8 @@ async def with_tasks(n: int) -> list[int]:
 ```python
 @env.task
 def process_single(x: int) -> int:
-    return x ** 2
+    return x**2
+
 
 @env.task
 def parallel_map(items: list[int]) -> list[int]:
@@ -571,8 +597,8 @@ async def fan_out_fan_in(n: int) -> int:
     # Fan-out: parallel execution
     tasks = [asyncio.create_task(square(i)) for i in range(n)]
     results = await asyncio.gather(*tasks)
-    
-    # Fan-in: aggregate results  
+
+    # Fan-in: aggregate results
     return sum(results)
 ```
 
@@ -581,14 +607,15 @@ async def fan_out_fan_in(n: int) -> int:
 ```python
 import asyncio
 
+
 @env.task
 async def rate_limited(items: list[int], max_concurrent: int = 10) -> list[int]:
     semaphore = asyncio.Semaphore(max_concurrent)
-    
+
     async def limited_process(x):
         async with semaphore:
             return await process_item(x)
-    
+
     return await asyncio.gather(*[limited_process(x) for x in items])
 ```
 
@@ -602,6 +629,7 @@ async def rate_limited(items: list[int], max_concurrent: int = 10) -> list[int]:
 from flyte import Cache
 
 env = flyte.TaskEnvironment(name="cached", cache="auto")
+
 
 # Or per-task
 @env.task(cache=Cache(behavior="auto"))
@@ -622,11 +650,13 @@ async def versioned_task(x: int) -> int:
 ### Ignored Inputs
 
 ```python
-@env.task(cache=Cache(
-    behavior="override", 
-    version_override="v1",
-    ignored_inputs="timestamp"  # Won't affect cache key
-))
+@env.task(
+    cache=Cache(
+        behavior="override",
+        version_override="v1",
+        ignored_inputs="timestamp",  # Won't affect cache key
+    )
+)
 async def cached_with_ignored(data: str, timestamp: str) -> str:
     return data
 ```
@@ -654,11 +684,13 @@ run = flyte.with_runcontext(overwrite_cache=True).run(my_task, x=1)
 ```python
 import flyte.errors
 
+
 @env.task
 async def may_fail(x: int) -> int:
     if x < 0:
         raise ValueError("x must be positive")
     return x
+
 
 @env.task
 async def with_error_handling(x: int) -> int:
@@ -713,25 +745,24 @@ Override task properties at call time:
 async def flexible_task(x: int) -> int:
     return x * 2
 
+
 @env.task
 async def driver() -> int:
     # Override resources
     result = await flexible_task.override(
         resources=flyte.Resources(cpu=4, memory="8Gi")
     )(x=10)
-    
+
     # Override with short name (for UI)
-    result = await flexible_task.override(
-        short_name="custom_name"
-    )(x=20)
-    
+    result = await flexible_task.override(short_name="custom_name")(x=20)
+
     # Override multiple properties
     result = await flexible_task.override(
         resources=flyte.Resources(gpu="T4:1"),
         cache="disable",
         timeout=3600,
     )(x=30)
-    
+
     return result
 ```
 
@@ -740,11 +771,12 @@ async def driver() -> int:
 ```python
 from copy import deepcopy
 
+
 @task_env.task
 async def dynamic_spark(executor_count: int) -> float:
     updated_config = deepcopy(spark_config)
     updated_config.spark_conf["spark.executor.instances"] = str(executor_count)
-    
+
     return await spark_task.override(plugin_config=updated_config)()
 ```
 
@@ -760,20 +792,23 @@ env = flyte.TaskEnvironment(
     resources=flyte.Resources(cpu=1, memory="500Mi"),
     image=flyte.Image.from_debian_base().with_pip_packages("unionai-reuse"),
     reusable=flyte.ReusePolicy(
-        replicas=2,           # Number of warm replicas (or tuple for min/max)
-        idle_ttl=300,         # Seconds to keep idle before scaling down
-        concurrency=10,       # Max concurrent requests per replica
-        scaledown_ttl=60,     # Grace period before termination
+        replicas=2,  # Number of warm replicas (or tuple for min/max)
+        idle_ttl=300,  # Seconds to keep idle before scaling down
+        concurrency=10,  # Max concurrent requests per replica
+        scaledown_ttl=60,  # Grace period before termination
     ),
 )
+
 
 @env.task
 async def fast_task(x: int) -> int:
     # Reuses warm container - no cold start
     return x * 2
 
+
 # Non-reusable driver that uses reusable workers
 driver_env = env.clone_with(name="driver", reusable=None, depends_on=[env])
+
 
 @driver_env.task
 async def orchestrate(n: int) -> list[int]:
@@ -785,10 +820,12 @@ async def orchestrate(n: int) -> list[int]:
 ```python
 from async_lru import alru_cache
 
+
 @alru_cache(maxsize=100)
 async def expensive_computation(key: str) -> dict:
     # Cached in actor memory across invocations
     return await load_expensive_data(key)
+
 
 @env.task  # reusable env
 async def cached_task(key: str) -> dict:
@@ -808,9 +845,11 @@ Traces record function calls without creating separate tasks:
 async def log_metric(name: str, value: float):
     print(f"{name}: {value}")
 
+
 @flyte.trace
 async def compute_step(x: int) -> int:
-    return x ** 2
+    return x**2
+
 
 @env.task
 async def with_traces(n: int) -> int:
@@ -850,24 +889,25 @@ import flyte.report
 
 env = flyte.TaskEnvironment(name="reports")
 
+
 @env.task(report=True)
 async def generate_report():
     # Replace entire report content
     await flyte.report.replace.aio("<h1>Analysis Complete</h1>")
-    
+
     # Add to report
     await flyte.report.log.aio("<p>Processing started...</p>")
-    
+
     # Use tabs for organization
     tab1 = flyte.report.get_tab("Summary")
     tab1.log("<h2>Summary</h2><p>Results overview</p>")
-    
+
     tab2 = flyte.report.get_tab("Details")
     tab2.log("<h2>Detailed Results</h2>")
-    
+
     # Flush to make visible
     await flyte.report.flush.aio()
-    
+
     # Add interactive visualizations
     html = """
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
@@ -889,9 +929,11 @@ async def generate_report():
 ```python
 from datetime import datetime
 
+
 @env.task(triggers=flyte.Trigger.hourly())
 def hourly_task(trigger_time: datetime) -> str:
     return f"Executed at {trigger_time}"
+
 
 @env.task(triggers=flyte.Trigger.minutely("start_time"))
 def minutely_task(start_time: datetime) -> str:
@@ -906,6 +948,7 @@ custom_trigger = flyte.Trigger(
     flyte.Cron("0 0 * * *", timezone="America/New_York"),
     inputs={"trigger_time": flyte.TriggerTime, "x": 1},
 )
+
 
 @env.task(triggers=custom_trigger)
 def custom_scheduled(trigger_time: datetime, x: int) -> str:
@@ -922,14 +965,16 @@ nyc_trigger = flyte.Trigger(
 )
 
 sf_trigger = flyte.Trigger(
-    "sf", 
+    "sf",
     flyte.Cron("0 9 * * *", timezone="America/Los_Angeles"),
     inputs={"start_time": flyte.TriggerTime},
 )
 
+
 @env.task(triggers=(nyc_trigger, sf_trigger))
 def multi_timezone(start_time: datetime) -> str:
     return f"Executed at {start_time}"
+
 
 # Deploy triggers
 if __name__ == "__main__":
@@ -949,9 +994,11 @@ env = flyte.TaskEnvironment(
     secrets=flyte.Secret(key="MY_API_KEY", as_env_var="API_KEY"),
 )
 
+
 @env.task
 async def use_secret() -> str:
     import os
+
     api_key = os.environ["API_KEY"]
     return f"Using key: {api_key[:4]}..."
 ```
@@ -973,6 +1020,7 @@ env = flyte.TaskEnvironment(
         mount=pathlib.Path(SECRET_PATH),
     ),
 )
+
 
 @env.task
 def read_secret() -> str:
@@ -1009,6 +1057,7 @@ spark_env = flyte.TaskEnvironment(
     resources=flyte.Resources(cpu=2, memory="4Gi"),
 )
 
+
 @spark_env.task
 async def spark_job() -> int:
     spark = flyte.ctx().data["spark_session"]
@@ -1027,9 +1076,8 @@ ray_config = RayJobConfig(
     enable_autoscaling=False,
 )
 
-image = (
-    flyte.Image.from_debian_base()
-    .with_pip_packages("ray[default]==2.46.0", "flyteplugins-ray")
+image = flyte.Image.from_debian_base().with_pip_packages(
+    "ray[default]==2.46.0", "flyteplugins-ray"
 )
 
 ray_env = flyte.TaskEnvironment(
@@ -1039,14 +1087,15 @@ ray_env = flyte.TaskEnvironment(
     resources=flyte.Resources(cpu=4, memory="4Gi"),
 )
 
+
 @ray_env.task
 async def ray_job(n: int) -> list[int]:
     import ray
-    
+
     @ray.remote
     def square(x):
-        return x ** 2
-    
+        return x**2
+
     futures = [square.remote(i) for i in range(n)]
     return ray.get(futures)
 ```
@@ -1069,9 +1118,11 @@ dask_env = flyte.TaskEnvironment(
     image=image,
 )
 
+
 @dask_env.task
 async def dask_job(n: int) -> list[int]:
     from distributed import Client
+
     client = Client()
     futures = client.map(lambda x: x + 1, range(n))
     return client.gather(futures)
@@ -1096,9 +1147,11 @@ torch_env = flyte.TaskEnvironment(
     resources=flyte.Resources(cpu=2, memory="4Gi"),
 )
 
+
 @torch_env.task
 def distributed_train(epochs: int) -> float:
     import torch.distributed as dist
+
     dist.init_process_group("gloo")
     # Training code...
     return final_loss
@@ -1146,9 +1199,11 @@ app_env = FastAPIAppEnvironment(
     requires_auth=False,
 )
 
+
 @app.get("/predict")
 async def predict(x: int) -> dict:
     return {"result": x * 2}
+
 
 if __name__ == "__main__":
     flyte.init_from_config()
@@ -1168,9 +1223,11 @@ task_env = flyte.TaskEnvironment(
     depends_on=[app_env],
 )
 
+
 @task_env.task
 async def call_service(x: int) -> int:
     import httpx
+
     async with httpx.AsyncClient() as client:
         response = await client.get(f"{app_env.endpoint}/predict", params={"x": x})
         return response.json()["result"]
@@ -1184,25 +1241,21 @@ async def call_service(x: int) -> int:
 
 ```python
 async def retry_with_memory(
-    task_fn,
-    *args,
-    initial_memory: str = "250Mi",
-    max_memory: str = "4Gi",
-    **kwargs
+    task_fn, *args, initial_memory: str = "250Mi", max_memory: str = "4Gi", **kwargs
 ):
     """Retry task with increasing memory on OOM."""
     memories = ["250Mi", "500Mi", "1Gi", "2Gi", "4Gi"]
-    
+
     for mem in memories:
         if parse_memory(mem) > parse_memory(max_memory):
             break
         try:
-            return await task_fn.override(
-                resources=flyte.Resources(memory=mem)
-            )(*args, **kwargs)
+            return await task_fn.override(resources=flyte.Resources(memory=mem))(
+                *args, **kwargs
+            )
         except flyte.errors.OOMError:
             continue
-    
+
     raise RuntimeError("Exhausted memory retries")
 ```
 
@@ -1241,15 +1294,13 @@ async def auto_batch(
 ):
     """Process items in batches."""
     results = []
-    
+
     for i in range(0, len(items), batch_size):
-        batch = items[i:i + batch_size]
+        batch = items[i : i + batch_size]
         with flyte.group(f"batch-{i // batch_size}"):
-            batch_results = await asyncio.gather(
-                *[task_fn(item) for item in batch]
-            )
+            batch_results = await asyncio.gather(*[task_fn(item) for item in batch])
             results.extend(batch_results)
-    
+
     return results
 ```
 
@@ -1258,25 +1309,26 @@ async def auto_batch(
 ```python
 import typing
 
+
 @env.task
-async def run_udf(
-    x: int, 
-    udf: typing.Callable[[int], typing.Awaitable[int]]
-) -> int:
+async def run_udf(x: int, udf: typing.Callable[[int], typing.Awaitable[int]]) -> int:
     return await udf(x)
+
 
 @env.task
 async def add_one(x: int) -> int:
     return x + 1
 
+
 @env.task
 async def main():
     # Pass task as UDF
     result = await run_udf(10, add_one)
-    
+
     # Or inline function
     async def multiply(x: int) -> int:
         return x * 2
+
     result = await run_udf(10, multiply)
 ```
 
@@ -1299,9 +1351,11 @@ env = flyte.TaskEnvironment(
     image=flyte.Image.from_uv_script(__file__),
 )
 
+
 @env.task
 async def main():
     import pandas as pd
+
     return pd.DataFrame({"a": [1, 2, 3]})
 ```
 
@@ -1382,11 +1436,11 @@ env = flyte.TaskEnvironment(
 
 if __name__ == "__main__":
     flyte.init_from_config(root_dir=pathlib.Path(__file__).parent)
-    
+
     # Full build mode
     run = flyte.with_runcontext(
         copy_style="none",  # Disable fast deploy
-        version="v1.0.0",   # Explicit version
+        version="v1.0.0",  # Explicit version
     ).run(main)
 ```
 
@@ -1413,16 +1467,19 @@ if __name__ == "__main__":
 def add(a: int, b: int) -> int:
     return a + b
 
+
 @workflow
 def math_workflow(x: int) -> int:
     step1 = add(a=x, b=1)
     step2 = add(a=step1, b=2)
     return step2
 
+
 # v2 Style
 @env.task
 async def add(a: int, b: int) -> int:
     return a + b
+
 
 @env.task
 async def math_workflow(x: int) -> int:
@@ -1442,6 +1499,7 @@ def process_all(items: List[str]) -> List[str]:
         results.append(process_item(item=item))
     return results
 
+
 # v2 Style
 @env.task
 async def process_all(items: list[str]) -> list[str]:
@@ -1455,19 +1513,19 @@ async def process_all(items: list[str]) -> list[str]:
 ### Initialization
 
 ```python
-flyte.init_from_config()                    # From ~/.flyte/config.yaml
-flyte.init_from_config("path/to/config")    # Explicit path
-flyte.init(endpoint="...", project="...")   # Programmatic
+flyte.init_from_config()  # From ~/.flyte/config.yaml
+flyte.init_from_config("path/to/config")  # Explicit path
+flyte.init(endpoint="...", project="...")  # Programmatic
 ```
 
 ### Running Tasks
 
 ```python
-run = flyte.run(task, arg=value)            # Remote execution
+run = flyte.run(task, arg=value)  # Remote execution
 run = flyte.with_runcontext(mode="local").run(task)  # Local
-run.wait()                                   # Wait for completion
-result = run.outputs()                       # Get outputs
-print(run.url)                              # Get UI URL
+run.wait()  # Wait for completion
+result = run.outputs()  # Get outputs
+print(run.url)  # Get UI URL
 ```
 
 ### Task Definition
@@ -1484,7 +1542,7 @@ print(run.url)                              # Get UI URL
 
 ```python
 flyte.Resources(
-    cpu="2",            # Or (min, max) tuple
+    cpu="2",  # Or (min, max) tuple
     memory="4Gi",
     gpu="T4:1",
     disk="10Gi",

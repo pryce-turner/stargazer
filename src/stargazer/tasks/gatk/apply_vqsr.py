@@ -9,9 +9,8 @@ spec: [docs/architecture/tasks.md](../architecture/tasks.md)
 from pathlib import Path
 
 import stargazer.utils.local_storage as _storage
-from stargazer.config import gatk_env
 from stargazer.assets import Reference, Variants, VariantsIndex, VQSRModel
-from stargazer.config import logger
+from stargazer.config import gatk_env, logger
 from stargazer.utils import _run
 
 _DEFAULT_FILTER_LEVEL = {"SNP": 99.5, "INDEL": 99.0}

@@ -46,11 +46,13 @@ mcp = FastMCP("stargazer")
 ```python
 from stargazer.utils.storage import default_client
 
+
 @mcp.tool()
 async def query_files(keyvalues: dict[str, str]) -> list[dict]:
     """Query files by metadata. Returns matching files with their metadata."""
     files = await default_client.query_files(keyvalues)
     return [_serialize_ipfile(f) for f in files]
+
 
 @mcp.tool()
 async def upload_file(path: str, keyvalues: dict[str, str]) -> dict:
@@ -58,11 +60,13 @@ async def upload_file(path: str, keyvalues: dict[str, str]) -> dict:
     ipfile = await default_client.upload_file(Path(path), keyvalues=keyvalues)
     return _serialize_ipfile(ipfile)
 
+
 @mcp.tool()
 async def download_file(file_id: str) -> str:
     """Download a file to local cache. Returns the local path."""
     # Reconstruct IpFile from id, then download
     ...
+
 
 @mcp.tool()
 async def delete_file(file_id: str) -> str:
@@ -97,6 +101,7 @@ stargazer = "stargazer.server:main"
 ```python
 def main():
     import sys
+
     transport = "stdio"
     if "--http" in sys.argv:
         transport = "streamable-http"
@@ -115,6 +120,7 @@ Register all bioinformatics tasks as MCP tools.
 def _serialize_type(obj) -> dict:
     """Serialize Reference, Alignment, Reads, or Variants to JSON dict."""
     ...
+
 
 def _deserialize_args(task_fn, kwargs: dict) -> dict:
     """Deserialize JSON inputs to typed Python objects based on task signature."""
@@ -158,20 +164,24 @@ async def list_references() -> str:
     # Group by build, summarize available components
     ...
 
+
 @mcp.resource("stargazer://samples")
 async def list_samples() -> str:
     """List available samples and their data types."""
     ...
+
 
 @mcp.resource("stargazer://workflows")
 async def list_workflows() -> str:
     """List available workflows with parameter descriptions."""
     ...
 
+
 @mcp.resource("stargazer://runs")
 async def list_runs() -> str:
     """List recent workflow runs with status."""
     ...
+
 
 @mcp.resource("stargazer://config")
 async def show_config() -> str:
@@ -195,15 +205,18 @@ def align_reads(sample_id: str, ref_build: str) -> str:
         f"Return the resulting alignment."
     )
 
+
 @mcp.prompt()
 def preprocess_sample(sample_id: str, ref_build: str, known_sites: str = "") -> str:
     """Generate instructions for full sample preprocessing."""
     ...
 
+
 @mcp.prompt()
 def call_variants(sample_id: str, ref_build: str) -> str:
     """Generate instructions for germline variant calling."""
     ...
+
 
 @mcp.prompt()
 def joint_genotype(sample_ids: str, ref_build: str, cohort_id: str = "cohort") -> str:

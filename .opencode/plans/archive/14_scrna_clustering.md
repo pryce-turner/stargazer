@@ -29,11 +29,13 @@ Create Asset subclass for AnnData files:
 class AnnData(Asset):
     _asset_key: ClassVar[str] = "anndata"
     sample_id: str = ""
-    n_obs: int = 0           # number of cells/observations
-    n_vars: int = 0          # number of genes/variables
-    stage: str = ""          # pipeline stage: "raw", "qc_filtered", "normalized", "reduced", "clustered"
-    organism: str = ""       # e.g. "human", "mouse"
-    source_cid: str = ""     # provenance: input anndata CID
+    n_obs: int = 0  # number of cells/observations
+    n_vars: int = 0  # number of genes/variables
+    stage: str = (
+        ""  # pipeline stage: "raw", "qc_filtered", "normalized", "reduced", "clustered"
+    )
+    organism: str = ""  # e.g. "human", "mouse"
+    source_cid: str = ""  # provenance: input anndata CID
 ```
 
 Register in `src/stargazer/assets/__init__.py` — add import + `__all__` entry.

@@ -34,8 +34,8 @@ def _():
     from pathlib import Path
     from typing import ClassVar
 
-    import marimo as mo
     import flyte
+    import marimo as mo
 
     flyte.init_from_config()
 
@@ -66,7 +66,6 @@ def _(mo):
         and add typed fields with defaults.
         """
     )
-    return
 
 
 @app.cell
@@ -99,7 +98,6 @@ def _(mo):
         filetype filters, multi-file mode, and styling options.
         """
     )
-    return
 
 
 @app.cell
@@ -154,7 +152,6 @@ def _(mo):
         real workloads.
         """
     )
-    return
 
 
 @app.cell
@@ -195,7 +192,6 @@ def _(mo):
         `asyncio.gather`; chain tasks by awaiting them in sequence.
         """
     )
-    return
 
 
 @app.cell
@@ -222,7 +218,6 @@ def _(mo):
         endpoint once `.flyte/config.yaml` points at one.
         """
     )
-    return
 
 
 @app.cell
@@ -233,7 +228,6 @@ async def _(mo, my_asset, my_workflow):
         [{"cid": _r.cid, "path": str(_r.path)} for _r in results],
         selection=None,
     )
-    return
 
 
 if __name__ == "__main__":

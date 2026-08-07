@@ -15,8 +15,8 @@ spec: [docs/architecture/workflows.md](../architecture/workflows.md)
 
 import asyncio
 
-from stargazer.config import gatk_env, log_execution
 from stargazer.assets import Variants
+from stargazer.config import gatk_env, log_execution
 from stargazer.tasks import (
     haplotype_caller,
     joint_call_gvcfs,

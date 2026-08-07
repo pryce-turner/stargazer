@@ -8,9 +8,7 @@ import dataclasses
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, get_type_hints
-
-from typing_extensions import Self
+from typing import Any, ClassVar, Self, get_type_hints
 
 _BASE_FIELDS = frozenset(("cid", "path", "keyvalues"))
 

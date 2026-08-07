@@ -5,6 +5,7 @@ Tests for Alignment asset types.
 import pytest
 from conftest import GATK_FIXTURES_DIR
 
+import stargazer.utils.local_storage as _storage_mod
 from stargazer.assets import specialize
 from stargazer.assets.alignment import (
     Alignment,
@@ -12,7 +13,6 @@ from stargazer.assets.alignment import (
     BQSRReport,
     DuplicateMetrics,
 )
-import stargazer.utils.local_storage as _storage_mod
 
 
 @pytest.mark.asyncio

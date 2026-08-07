@@ -14,16 +14,16 @@ Reference:
 spec: [docs/workflows/scrna.md](../workflows/scrna.md)
 """
 
-from stargazer.config import scrna_env, log_execution
-from stargazer.assets.scrna import AnnData
 from stargazer.assets.asset import assemble
+from stargazer.assets.scrna import AnnData
+from stargazer.config import log_execution, scrna_env
 from stargazer.tasks.scrna import (
-    qc_filter,
-    normalize,
-    select_features,
-    reduce_dimensions,
     cluster,
     find_markers,
+    normalize,
+    qc_filter,
+    reduce_dimensions,
+    select_features,
 )
 
 

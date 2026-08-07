@@ -68,7 +68,9 @@ These tests directly test the type classes and need the most significant updates
 **Fix strategy:**
 ```python
 # OLD:
-alignment = Alignment(sample_id="NA12829", bam_name="test.bam", files=[bam_file, bai_file])
+alignment = Alignment(
+    sample_id="NA12829", bam_name="test.bam", files=[bam_file, bai_file]
+)
 bam_path = alignment.get_bam_path()
 
 # NEW (using hydrate):
@@ -291,6 +293,7 @@ alignment = alignments[0]
 
 ```python
 from helpers import create_test_alignment, create_test_reference
+
 
 @pytest.mark.asyncio
 async def test_some_task():

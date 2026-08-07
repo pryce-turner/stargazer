@@ -15,16 +15,14 @@ spec: [docs/architecture/configuration.md](../architecture/configuration.md)
 import hashlib
 import os
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
-import aiohttp
 import aiofiles
-from tinydb import TinyDB, Query
+import aiohttp
+from tinydb import Query, TinyDB
 
 import stargazer.config  # ensure env var defaults are set  # noqa: F401
-
 from stargazer.assets.asset import Asset
 from stargazer.utils.pinata import PinataClient
 
@@ -52,9 +50,9 @@ class LocalStorageClient:
 
     def __init__(
         self,
-        local_dir: Optional[Path] = None,
-        remote: Optional[PinataClient] = None,
-        public_gateway: Optional[str] = None,
+        local_dir: Path | None = None,
+        remote: PinataClient | None = None,
+        public_gateway: str | None = None,
     ):
         """Initialize local storage client.
 
@@ -74,7 +72,7 @@ class LocalStorageClient:
 
         # TinyDB for local metadata storage (lazy initialized)
         self.local_db_path = self.local_dir / "stargazer_local.json"
-        self._db: Optional[TinyDB] = None
+        self._db: TinyDB | None = None
         self._db_mtime: float = 0.0
 
     @property
@@ -136,7 +134,7 @@ class LocalStorageClient:
         self._materialize(path, local_path, overwrite=True)
 
         # Upsert metadata in TinyDB (avoid duplicates on re-upload)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         File = Query()
         self.db.upsert(
             {
@@ -153,7 +151,7 @@ class LocalStorageClient:
     async def download(
         self,
         component: Asset,
-        dest: Optional[Path] = None,
+        dest: Path | None = None,
     ) -> bool:
         """Download a file by CID. Checks cache, then remote, then public gateway.
 
@@ -274,7 +272,7 @@ class LocalStorageClient:
         self,
         cid: str,
         keyvalues: dict[str, str],
-        network: Optional[str] = None,
+        network: str | None = None,
     ) -> dict:
         """Merge a metadata patch onto an existing record by CID.
 
@@ -337,9 +335,7 @@ class LocalStorageClient:
         except OSError:
             shutil.copy2(src, dest)
 
-    def _resolve_dest(
-        self, component: Asset, source: Path, dest: Optional[Path]
-    ) -> None:
+    def _resolve_dest(self, component: Asset, source: Path, dest: Path | None) -> None:
         """Set component.path, optionally copying to dest."""
         if dest:
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -357,14 +353,16 @@ class LocalStorageClient:
         url = f"{self.public_gateway}/ipfs/{cid}"
         tmp = dest.with_suffix(dest.suffix + ".tmp")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                response.raise_for_status()
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(url) as response,
+        ):
+            response.raise_for_status()
 
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                async with aiofiles.open(tmp, "wb") as f:
-                    async for chunk in response.content.iter_chunked(8192):
-                        await f.write(chunk)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            async with aiofiles.open(tmp, "wb") as f:
+                async for chunk in response.content.iter_chunked(8192):
+                    await f.write(chunk)
 
         tmp.rename(dest)
 
@@ -399,7 +397,7 @@ class _LazyClient:
     until first attribute access guarantees we see the populated env.
     """
 
-    _instance: Optional[LocalStorageClient] = None
+    _instance: LocalStorageClient | None = None
 
     def _resolve(self) -> LocalStorageClient:
         """Construct the real client on first use and memoize it."""

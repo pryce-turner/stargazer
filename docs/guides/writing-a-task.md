@@ -27,6 +27,7 @@ from stargazer.assets.alignment import Alignment
 
 tool_env = flyte.TaskEnvironment(name="my_tool")
 
+
 @tool_env.task
 async def run_my_tool(ref: Reference, aln: Alignment) -> MyOutput:
     """One-line description of what this task does."""

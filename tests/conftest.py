@@ -14,11 +14,11 @@ from pathlib import Path
 # the JWT at setup and reset the singleton so the next access re-resolves.
 os.environ.pop("PINATA_JWT", None)
 
-import pytest  # noqa: E402
-import flyte  # noqa: E402
+import flyte
+import pytest
 
-import stargazer.utils.local_storage as _storage_mod  # noqa: E402
-from stargazer.utils.local_storage import LocalStorageClient, _LazyClient  # noqa: E402
+import stargazer.utils.local_storage as _storage_mod
+from stargazer.utils.local_storage import LocalStorageClient, _LazyClient
 
 # Add tests directory to Python path for config imports
 sys.path.insert(0, str(Path(__file__).parent))

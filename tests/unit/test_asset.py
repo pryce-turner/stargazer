@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from stargazer.assets.asset import Asset
 from stargazer.assets.alignment import Alignment
+from stargazer.assets.asset import Asset
 
 
 class TestAssetRoundtrip:

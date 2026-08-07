@@ -17,13 +17,11 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Optional
 
-import aiohttp
 import aiofiles
+import aiohttp
 
 import stargazer.config  # ensure env var defaults are set  # noqa: F401
-
 from stargazer.assets.asset import Asset
 
 # Pinata's plain multipart POST is capped at 100MB; larger files must use the
@@ -91,8 +89,8 @@ class PinataClient:
 
     def __init__(
         self,
-        jwt: Optional[str] = None,
-        visibility: Optional[str] = None,
+        jwt: str | None = None,
+        visibility: str | None = None,
     ):
         """Initialize Pinata client.
 
@@ -120,20 +118,22 @@ class PinataClient:
     async def _get_gateway_domain(self) -> str:
         """Fetch the dedicated gateway domain from Pinata API."""
         if not hasattr(self, "_gateway_domain") or self._gateway_domain is None:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.get(
                     f"{self.API_BASE}/ipfs/gateways", headers=self._headers()
-                ) as response:
-                    response.raise_for_status()
-                    data = await response.json()
-                    rows = data["data"]["rows"]
-                    if not rows:
-                        raise ValueError(
-                            "No gateway configured in Pinata account. "
-                            "Create one at https://app.pinata.cloud/gateway"
-                        )
-                    domain = rows[0]["domain"]
-                    self._gateway_domain = f"https://{domain}.mypinata.cloud"
+                ) as response,
+            ):
+                response.raise_for_status()
+                data = await response.json()
+                rows = data["data"]["rows"]
+                if not rows:
+                    raise ValueError(
+                        "No gateway configured in Pinata account. "
+                        "Create one at https://app.pinata.cloud/gateway"
+                    )
+                domain = rows[0]["domain"]
+                self._gateway_domain = f"https://{domain}.mypinata.cloud"
         return self._gateway_domain
 
     async def _get_signed_url(self, cid: str, expires: int = 300) -> str:
@@ -145,15 +145,17 @@ class PinataClient:
             "date": int(time.time()),
             "method": "GET",
         }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
+        async with (
+            aiohttp.ClientSession() as session,
+            session.post(
                 f"{self.API_BASE}/files/sign",
                 headers=self._headers(),
                 json=payload,
-            ) as response:
-                response.raise_for_status()
-                data = await response.json()
-                return data["data"]
+            ) as response,
+        ):
+            response.raise_for_status()
+            data = await response.json()
+            return data["data"]
 
     async def create_signed_upload_url(
         self,
@@ -161,7 +163,7 @@ class PinataClient:
         keyvalues: dict[str, str],
         network: str,
         expires: int = 300,
-        max_file_size: Optional[int] = None,
+        max_file_size: int | None = None,
     ) -> str:
         """Mint a signed upload URL for a direct browser→Pinata upload.
 
@@ -190,15 +192,17 @@ class PinataClient:
         if max_file_size is not None:
             payload["max_file_size"] = max_file_size
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
+        async with (
+            aiohttp.ClientSession() as session,
+            session.post(
                 f"{self.UPLOAD_BASE}/files/sign",
                 headers=self._headers(),
                 json=payload,
-            ) as response:
-                response.raise_for_status()
-                data = await response.json()
-                return data["data"]
+            ) as response,
+        ):
+            response.raise_for_status()
+            data = await response.json()
+            return data["data"]
 
     async def upload(self, component: Asset) -> None:
         """Upload a file to IPFS via Pinata. Sets component.cid.
@@ -308,17 +312,19 @@ class PinataClient:
 
         download_url = await self._get_signed_url(cid)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(download_url) as response:
-                response.raise_for_status()
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(download_url) as response,
+        ):
+            response.raise_for_status()
 
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                async with aiofiles.open(dest, "wb") as f:
-                    async for chunk in response.content.iter_chunked(8192):
-                        await f.write(chunk)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            async with aiofiles.open(dest, "wb") as f:
+                async for chunk in response.content.iter_chunked(8192):
+                    await f.write(chunk)
 
     async def query(
-        self, keyvalues: dict[str, str], network: Optional[str] = None
+        self, keyvalues: dict[str, str], network: str | None = None
     ) -> list[dict]:
         """Query files by keyvalue metadata from Pinata API.
 
@@ -398,7 +404,7 @@ class PinataClient:
         self,
         cid: str,
         keyvalues: dict[str, str],
-        network: Optional[str] = None,
+        network: str | None = None,
     ) -> dict:
         """Merge keyvalues onto an existing file's metadata (Pinata PUT).
 

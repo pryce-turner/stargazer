@@ -58,22 +58,27 @@ import chainlit as cl
 from mcp import ClientSession
 from litellm import acompletion
 
+
 @cl.on_mcp_connect
 async def on_mcp_connect(connection, session: ClientSession):
     """Discover tools from stargazer MCP server on connection."""
     result = await session.list_tools()
-    tools = [{
-        "type": "function",
-        "function": {
-            "name": t.name,
-            "description": t.description,
-            "parameters": t.inputSchema,
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": t.name,
+                "description": t.description,
+                "parameters": t.inputSchema,
+            },
         }
-    } for t in result.tools]
+        for t in result.tools
+    ]
 
     mcp_tools = cl.user_session.get("mcp_tools", {})
     mcp_tools[connection.name] = tools
     cl.user_session.set("mcp_tools", mcp_tools)
+
 
 @cl.on_mcp_disconnect
 async def on_mcp_disconnect(name: str, session: ClientSession):
@@ -99,6 +104,7 @@ LITELLM_MODEL=provider/model-name  # e.g. anthropic/claude-haiku-4-5-20251001
 import os
 
 MODEL = os.environ.get("LITELLM_MODEL", "anthropic/claude-haiku-4-5-20251001")
+
 
 @cl.on_message
 async def on_message(message: cl.Message):
@@ -128,12 +134,14 @@ async def on_message(message: cl.Message):
         # Execute each tool call via MCP
         for tc in tool_calls:
             result = await execute_tool_via_mcp(tc)
-            history.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "name": tc.function.name,
-                "content": result,
-            })
+            history.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "name": tc.function.name,
+                    "content": result,
+                }
+            )
 
     cl.user_session.set("history", history)
 ```
@@ -169,9 +177,13 @@ async def stream_response(response) -> tuple[dict, list]:
                     tool_call_chunks[idx]["id"] = tc_chunk.id
                 if tc_chunk.function:
                     if tc_chunk.function.name:
-                        tool_call_chunks[idx]["function"]["name"] += tc_chunk.function.name
+                        tool_call_chunks[idx]["function"]["name"] += (
+                            tc_chunk.function.name
+                        )
                     if tc_chunk.function.arguments:
-                        tool_call_chunks[idx]["function"]["arguments"] += tc_chunk.function.arguments
+                        tool_call_chunks[idx]["function"]["arguments"] += (
+                            tc_chunk.function.arguments
+                        )
 
     await msg.send()
 
@@ -205,6 +217,7 @@ def find_mcp_for_tool(tool_name: str) -> str | None:
                 return mcp_name
     return None
 
+
 @cl.step(type="tool")
 async def execute_tool_via_mcp(tool_call) -> str:
     """Execute a tool call against the MCP server, render as Chainlit step."""
@@ -236,7 +249,9 @@ async def on_message(message: cl.Message):
     if message.elements:
         file_descriptions = []
         for element in message.elements:
-            file_descriptions.append(f"User uploaded file: {element.name} (path: {element.path})")
+            file_descriptions.append(
+                f"User uploaded file: {element.name} (path: {element.path})"
+            )
         # Prepend file info to the user message for the LLM
         message.content = "\n".join(file_descriptions) + "\n" + message.content
 
@@ -263,6 +278,7 @@ CHAINLIT_URL=https://stargazer.example.com  # required for production behind rev
 
 ```python
 from typing import Optional
+
 
 @cl.oauth_callback
 def oauth_callback(

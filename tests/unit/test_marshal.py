@@ -2,9 +2,8 @@
 
 from pathlib import Path
 
-from stargazer.marshal import marshal_output
 from stargazer.assets import Reference
-
+from stargazer.marshal import marshal_output
 
 # ---------------------------------------------------------------------------
 # Output marshaling

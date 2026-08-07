@@ -8,8 +8,8 @@ import asyncio
 import shlex
 
 import stargazer.utils.local_storage as _storage
+from stargazer.assets import R1, R2, AlignerIndex, Alignment, Reference
 from stargazer.config import gatk_env, logger
-from stargazer.assets import Alignment, AlignerIndex, R1, R2, Reference
 from stargazer.utils import _run
 
 

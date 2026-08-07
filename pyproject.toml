@@ -26,7 +26,10 @@ bio = [
     "pooch>=1.9.0",
 ]
 notebook = ["marimo>=0.10.0", "stargazer[bio]"]
-mcp = ["mcp[cli]>=1.0.0"]
+# Bounded to the 2.x major: SDK 2.0 renamed the high-level server class
+# (`FastMCP` → `MCPServer`, `mcp.server.fastmcp` → `mcp.server`), so an
+# unbounded range silently resolves across a breaking rename.
+mcp = ["mcp[cli]>=2.0,<3"]
 landing = [
     "fastapi>=0.115",
     "uvicorn>=0.34",
@@ -75,6 +78,45 @@ dev = [
     "pytest>=9.0.1",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=4.1.0",
-    "ruff>=0.14.0",
+    # Pinned to the same minor as .pre-commit-config.yaml's ruff rev — a
+    # floating range let the lock drift to a ruff whose *default* rule set
+    # differed from the pinned hook's. Bump both together.
+    "ruff>=0.16.2,<0.17",
     "zensical>=0.0.24",
 ]
+
+# Rule selection is ruff's default for the pinned version (see the ruff pin in
+# [dependency-groups] and the matching rev in .pre-commit-config.yaml — bump
+# them together). Only deliberate, reviewed exceptions are listed below.
+[tool.ruff.lint]
+ignore = [
+    # Graceful degradation is the app tier's design: a failed GitHub call, pod
+    # probe, or teardown must never take a request down, so handlers catch
+    # broadly and log. Narrowing these is actively harmful — a too-narrow
+    # `except` in the proxy's cookie gate turned a clean 401 into a 500.
+    "BLE001",
+    # Implicit concatenation inside a collection is how multi-line shell
+    # commands are written in `flyte.Image(...).with_commands([...])`.
+    # Parenthesizing each would add noise to every image recipe.
+    "ISC004",
+    # try-except-pass. All sites reviewed and deliberate: best-effort pod
+    # probes that fall back to GitHub, idempotent teardown of possibly-absent
+    # apps, get-or-create existence probes, a readiness check, and the child
+    # side of `pty.fork()` where logging is unsafe.
+    "S110",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# A marimo cell ends with a bare expression — that IS the render mechanism, not
+# a useless statement. Applies to every notebook surface.
+"src/stargazer/notebooks/**" = ["B018"]
+# The PTY/fork path deliberately uses blocking primitives: the pseudo-terminal
+# master fd is long-lived (no context manager), and reaping the child needs a
+# blocking wait.
+"app/proxy.py" = ["ASYNC222", "SIM115"]
+# Streaming uploads hand a live file object to the HTTP client, so it outlives
+# any `with` block and is closed by the client.
+"src/stargazer/utils/pinata.py" = ["ASYNC230", "SIM115"]
+# Task bodies are async for Flyte's benefit but do genuinely blocking local
+# file I/O on the pod's own disk.
+"src/stargazer/tasks/**" = ["ASYNC230"]

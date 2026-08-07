@@ -1,7 +1,8 @@
 """
 ### Stargazer MCP Server.
 
-Exposes storage tools and a dynamic task runner via FastMCP.
+Exposes storage tools and a dynamic task runner via the MCP SDK's
+high-level `MCPServer` (named `FastMCP` before SDK 2.0).
 Tasks and workflows are auto-discovered from the registry and executed
 through the Flyte local run context.
 
@@ -19,14 +20,13 @@ from pathlib import Path
 from typing import Any, get_args, get_origin
 
 import flyte
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 import stargazer.config  # ensure env var defaults are set  # noqa: F401
+from stargazer.assets import build_asset
+from stargazer.assets.asset import Asset, assemble
 from stargazer.marshal import marshal_output
 from stargazer.registry import TaskInfo, TaskRegistry
-from stargazer.assets import build_asset
-from stargazer.assets.asset import Asset
-from stargazer.assets.asset import assemble
 from stargazer.utils.local_storage import default_client
 
 
@@ -72,10 +72,10 @@ def _is_list_asset_hint(hint: Any) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# FastMCP instance + registry
+# MCPServer instance + registry
 # ---------------------------------------------------------------------------
 
-mcp = FastMCP("stargazer")
+mcp = MCPServer("stargazer")
 
 flyte.init_from_config()
 _registry = TaskRegistry()

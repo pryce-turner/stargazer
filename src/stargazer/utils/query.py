@@ -8,13 +8,13 @@ spec: [docs/architecture/types.md](../architecture/types.md)
 """
 
 from itertools import product
-from typing import Any, Dict, List
+from typing import Any
 
 
 def generate_query_combinations(
-    base_query: Dict[str, Any],
-    filters: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    base_query: dict[str, Any],
+    filters: dict[str, Any],
+) -> list[dict[str, Any]]:
     """
     Generate query combinations from filters using cartesian product.
 

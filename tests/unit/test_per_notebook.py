@@ -6,15 +6,15 @@ from app.per_notebook import per_notebook_env
 
 def _env(**overrides):
     """Build a per-notebook env with sensible defaults for the keyword args."""
-    kwargs = dict(
-        slug="demo",
-        mode="edit",
-        notebook_path="/workspace/x.py",
-        fork_full_name="octocat/stargazer",
-        pod_capability="signed-cap",
-        session_secret="sek",
-        admin_url="http://admin",
-    )
+    kwargs = {
+        "slug": "demo",
+        "mode": "edit",
+        "notebook_path": "/workspace/x.py",
+        "fork_full_name": "octocat/stargazer",
+        "pod_capability": "signed-cap",
+        "session_secret": "sek",
+        "admin_url": "http://admin",
+    }
     kwargs.update(overrides)
     return per_notebook_env(**kwargs)
 

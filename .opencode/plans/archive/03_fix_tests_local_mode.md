@@ -80,6 +80,7 @@ def create_mock_alignment(
     cache_dir.mkdir(parents=True, exist_ok=True)
     bam_path = cache_dir / test_cid
 
+
 # After
 def create_mock_alignment(
     local_dir: Path, sample_id: str, test_cid: str
@@ -136,7 +137,9 @@ Replace manual `IpFile` and type construction in tests with the proper `upload_f
 
 **Current Pattern (Manual Construction):**
 ```python
-def create_mock_alignment(local_dir: Path, sample_id: str, test_cid: str) -> tuple[Path, IpFile]:
+def create_mock_alignment(
+    local_dir: Path, sample_id: str, test_cid: str
+) -> tuple[Path, IpFile]:
     local_dir.mkdir(parents=True, exist_ok=True)
     bam_path = local_dir / test_cid
     bam_path.write_bytes(b"BAM\x01mock_bam_content")
@@ -156,14 +159,18 @@ def create_mock_alignment(local_dir: Path, sample_id: str, test_cid: str) -> tup
     )
     return bam_path, ipfile
 
+
 # Then manual type construction
-alignment = Alignment(sample_id=sample_id, bam_name=f"{sample_id}.bam", files=[bam_ipfile])
+alignment = Alignment(
+    sample_id=sample_id, bam_name=f"{sample_id}.bam", files=[bam_ipfile]
+)
 ```
 
 **New Pattern (Using `upload_file()` + `hydrate()`):**
 ```python
 from stargazer.tasks import hydrate
 from stargazer.utils.pinata import default_client
+
 
 async def create_mock_alignment(sample_id: str) -> tuple[Path, Alignment]:
     """Create mock alignment file and return hydrated type."""
@@ -180,7 +187,7 @@ async def create_mock_alignment(sample_id: str) -> tuple[Path, Alignment]:
             "type": "alignment",
             "component": "alignment",
             "sample_id": sample_id,
-        }
+        },
     )
 
     # Hydrate returns properly constructed type
@@ -197,6 +204,7 @@ import os
 import pytest
 from pathlib import Path
 from stargazer.utils.pinata import default_client
+
 
 @pytest.fixture(autouse=True)
 def setup_local_only_mode(tmp_path):
@@ -266,7 +274,7 @@ async def create_test_reference(build: str = "GRCh38") -> Reference:
     fasta_path.write_text(f">chr1\nGATCGATCGATC\n")
     await default_client.upload_file(
         fasta_path,
-        keyvalues={"type": "reference", "component": "fasta", "build": build}
+        keyvalues={"type": "reference", "component": "fasta", "build": build},
     )
 
     # Create FAIDX
@@ -274,7 +282,7 @@ async def create_test_reference(build: str = "GRCh38") -> Reference:
     faidx_path.write_text("chr1\t12\t6\t12\t13\n")
     await default_client.upload_file(
         faidx_path,
-        keyvalues={"type": "reference", "component": "faidx", "build": build}
+        keyvalues={"type": "reference", "component": "faidx", "build": build},
     )
 
     refs = await hydrate({"type": "reference", "build": build})
@@ -291,7 +299,11 @@ async def create_test_alignment(sample_id: str) -> Alignment:
     bam_path.write_bytes(b"BAM\x01mock_content")
     await default_client.upload_file(
         bam_path,
-        keyvalues={"type": "alignment", "component": "alignment", "sample_id": sample_id}
+        keyvalues={
+            "type": "alignment",
+            "component": "alignment",
+            "sample_id": sample_id,
+        },
     )
 
     # Create BAI
@@ -299,7 +311,7 @@ async def create_test_alignment(sample_id: str) -> Alignment:
     bai_path.write_bytes(b"BAI\x01mock_index")
     await default_client.upload_file(
         bai_path,
-        keyvalues={"type": "alignment", "component": "index", "sample_id": sample_id}
+        keyvalues={"type": "alignment", "component": "index", "sample_id": sample_id},
     )
 
     alignments = await hydrate({"type": "alignment", "sample_id": sample_id})
@@ -315,8 +327,7 @@ async def create_test_reads(sample_id: str, paired: bool = True) -> Reads:
     r1_path = local_dir / f"{sample_id}_R1.fastq"
     r1_path.write_text("@read1\nACGT\n+\nIIII\n")
     await default_client.upload_file(
-        r1_path,
-        keyvalues={"type": "reads", "component": "r1", "sample_id": sample_id}
+        r1_path, keyvalues={"type": "reads", "component": "r1", "sample_id": sample_id}
     )
 
     if paired:
@@ -325,7 +336,7 @@ async def create_test_reads(sample_id: str, paired: bool = True) -> Reads:
         r2_path.write_text("@read1\nTGCA\n+\nIIII\n")
         await default_client.upload_file(
             r2_path,
-            keyvalues={"type": "reads", "component": "r2", "sample_id": sample_id}
+            keyvalues={"type": "reads", "component": "r2", "sample_id": sample_id},
         )
 
     reads_list = await hydrate({"type": "reads", "sample_id": sample_id})
@@ -342,7 +353,7 @@ async def create_test_variants(sample_id: str) -> Variants:
     vcf_path.write_bytes(b"\x1f\x8b")  # gzip magic bytes
     await default_client.upload_file(
         vcf_path,
-        keyvalues={"type": "variants", "component": "vcf", "sample_id": sample_id}
+        keyvalues={"type": "variants", "component": "vcf", "sample_id": sample_id},
     )
 
     # Create TBI
@@ -350,7 +361,7 @@ async def create_test_variants(sample_id: str) -> Variants:
     tbi_path.write_bytes(b"TBI\x01")
     await default_client.upload_file(
         tbi_path,
-        keyvalues={"type": "variants", "component": "index", "sample_id": sample_id}
+        keyvalues={"type": "variants", "component": "index", "sample_id": sample_id},
     )
 
     variants_list = await hydrate({"type": "variants", "sample_id": sample_id})

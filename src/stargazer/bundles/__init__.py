@@ -16,7 +16,7 @@ spec: [docs/architecture/configuration.md](../architecture/configuration.md)
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -137,7 +137,7 @@ def _upsert_local(cid: str, keyvalues: dict[str, str], name: str, client) -> Non
         name: Human-readable filename for the asset.
         client: LocalStorageClient instance.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     File = Query()
     client.db.upsert(
         {

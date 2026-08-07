@@ -74,10 +74,11 @@ class Constellation:
     Single results return the asset directly; multiple results
     return a list. Missing assets return None.
     """
+
     _assets: dict[str, Asset | list[Asset]]
 
-    def __getattr__(self, name: str) -> Asset | list[Asset] | None:
-        ...
+    def __getattr__(self, name: str) -> Asset | list[Asset] | None: ...
+
 
 async def assemble(**filters) -> Constellation:
     """Query storage by keyvalue filters, specialize results, return as Constellation.

@@ -7,9 +7,8 @@ import shutil
 import pytest
 from conftest import GATK_FIXTURES_DIR, GENERAL_FIXTURES_DIR
 
-from stargazer.tasks.gatk.combine_gvcfs import combine_gvcfs
 from stargazer.assets import Reference, Variants
-
+from stargazer.tasks.gatk.combine_gvcfs import combine_gvcfs
 
 SAMPLE_GVCFS = {
     "NA12829": "NA12829_TP53.g.vcf",

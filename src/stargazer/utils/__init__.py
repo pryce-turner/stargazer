@@ -10,10 +10,10 @@ from stargazer.utils.query import generate_query_combinations
 from stargazer.utils.subprocess import _run
 
 __all__ = [
-    "default_client",
-    "get_client",
-    "generate_query_combinations",
-    "PinataClient",
     "LocalStorageClient",
+    "PinataClient",
     "_run",
+    "default_client",
+    "generate_query_combinations",
+    "get_client",
 ]

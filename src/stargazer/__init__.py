@@ -16,11 +16,11 @@ from stargazer.utils.local_storage import LocalStorageClient, default_client, ge
 from stargazer.utils.pinata import PinataClient
 
 __all__ = [
-    # Version
-    "__version__",
     # Storage
     "LocalStorageClient",
+    "PinataClient",
+    # Version
+    "__version__",
     "default_client",
     "get_client",
-    "PinataClient",
 ]

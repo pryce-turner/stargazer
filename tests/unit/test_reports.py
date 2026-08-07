@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from stargazer.assets.asset import Asset
-from stargazer.assets.alignment import BQSRReport
 from stargazer.assets import ASSET_REGISTRY
+from stargazer.assets.alignment import BQSRReport
+from stargazer.assets.asset import Asset
 
 
 class TestBQSRReport:

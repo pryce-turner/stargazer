@@ -12,9 +12,8 @@ import tempfile
 from pathlib import Path
 
 import stargazer.utils.local_storage as _storage
-from stargazer.config import gatk_env
 from stargazer.assets import Reference, Variants, VariantsIndex
-from stargazer.config import logger
+from stargazer.config import gatk_env, logger
 from stargazer.utils import _run
 
 

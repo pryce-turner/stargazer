@@ -380,10 +380,10 @@ Clarifying questions about design decisions.
 2. **Resource specs as integers** (line 23)
    ```python
    # Current
-   requests={"cpu": 4, "mem": "16Gi"}
+   requests = {"cpu": 4, "mem": "16Gi"}
 
    # Required
-   requests={"cpu": "4", "mem": "16Gi"}
+   requests = {"cpu": "4", "mem": "16Gi"}
    ```
 
 3. **Missing output verification** (line 78)

@@ -39,15 +39,18 @@ import flyte
 
 env = flyte.TaskEnvironment("hello_world")
 
+
 @env.task
 def hello_world(name: str) -> str:
     return f"Hello, {name}!"
+
 
 @env.task
 def main(name: str) -> str:
     for i in range(10):
         hello_world(name)
     return "Done"
+
 
 if __name__ == "__main__":
     flyte.init()
@@ -62,9 +65,11 @@ import flyte
 
 env = flyte.TaskEnvironment("hello_world")
 
+
 @env.task
 async def hello_world(name: str) -> str:
     return f"Hello, {name}!"
+
 
 @env.task
 async def main(name: str) -> str:
@@ -73,6 +78,7 @@ async def main(name: str) -> str:
         results.append(hello_world(name))
     await asyncio.gather(*results)
     return "Done"
+
 
 if __name__ == "__main__":
     flyte.init()
@@ -110,9 +116,11 @@ Flyte tasks support caching via `@env.task(cache=...)`, but tracing with `@flyte
 async def call_llm(prompt: str) -> str:
     return ...
 
+
 @env.task
 def finalize_output(output: str) -> str:
     return ...
+
 
 @env.task(cache=flyte.Cache(behavior="auto"))
 async def main(prompt: str) -> str:
@@ -142,6 +150,7 @@ env = flyte.TaskEnvironment(name="root")
 # Get remote tasks that were previously deployed
 torch_task = flyte.remote.Task.get("torch_env.torch_task", auto_version="latest")
 spark_task = flyte.remote.Task.get("spark_env.spark_task", auto_version="latest")
+
 
 @env.task
 def main() -> flyte.File:
@@ -233,11 +242,13 @@ import flyte
 # A TaskEnvironment provides a way of grouping the configuration used by tasks.
 env = flyte.TaskEnvironment(name="hello_world")
 
+
 # Use a TaskEnvironment to define tasks, which are regular Python functions.
 @env.task
 def fn(x: int) -> int:  # Type annotations are recommended.
     slope, intercept = 2, 5
     return slope * x + intercept
+
 
 # Tasks can call other tasks.
 # Each task defined with a given TaskEnvironment will run in its own separate container,
@@ -246,26 +257,29 @@ def fn(x: int) -> int:  # Type annotations are recommended.
 def main(x_list: list[int] = list(range(10))) -> float:
     x_len = len(x_list)
     if x_len < 10:
-        raise ValueError(f"x_list doesn't have a larger enough sample size, found: {x_len}")
-    
+        raise ValueError(
+            f"x_list doesn't have a larger enough sample size, found: {x_len}"
+        )
+
     # flyte.map is like Python map, but runs in parallel.
     y_list = list(flyte.map(fn, x_list))
     y_mean = sum(y_list) / len(y_list)
     return y_mean
+
 
 # Running this script locally will perform a flyte.run,
 # which will deploy your task code to your remote Union/Flyte instance.
 if __name__ == "__main__":
     # Initialize Flyte from a config file.
     flyte.init_from_config()
-    
+
     # Run your tasks remotely inline and pass parameter data.
     r = flyte.run(main, x_list=list(range(10)))
-    
+
     # Print various attributes of the run.
     print(r.name)
     print(r.url)
-    
+
     # Stream the logs from the remote run to the terminal.
     r.wait()
 ```
@@ -436,6 +450,7 @@ The simplest possible case:
 ```python
 env = flyte.TaskEnvironment(name="my_env")
 
+
 @env.task
 async def my_task(name: str) -> str:
     return f"Hello {name}!"
@@ -467,6 +482,7 @@ env_2 = flyte.TaskEnvironment(
     description="Data processing task environment",
 )
 
+
 # Level 2: Decorator - Override some environment settings
 @env_2.task(
     short_name="process",
@@ -475,10 +491,11 @@ env_2 = flyte.TaskEnvironment(
     max_inline_io_bytes=100 * 1024,
     retries=3,
     timeout=60,
-    docs="This task processes data and generates a report."
+    docs="This task processes data and generates a report.",
 )
 async def process_data(data_path: str) -> str:
     return f"Processed {data_path}"
+
 
 @env_2.task
 async def invoke_process_data() -> str:
@@ -488,7 +505,7 @@ async def invoke_process_data() -> str:
         cache="auto",
         max_inline_io_bytes=100 * 1024,
         retries=3,
-        timeout=60
+        timeout=60,
     )("input.csv")
     return result
 ```
@@ -591,10 +608,7 @@ If a `TaskEnvironment` does not specify an `image`, it will use the default Flyt
 You can directly reference an image by URL:
 
 ```python
-env = flyte.TaskEnvironment(
-    name="my_task_env",
-    image="docker.io/myorg/myimage:mytag"
-)
+env = flyte.TaskEnvironment(name="my_task_env", image="docker.io/myorg/myimage:mytag")
 ```
 
 ### Specifying Your Own Image with the flyte.Image Object
@@ -628,20 +642,19 @@ import numpy as np
 env = flyte.TaskEnvironment(
     name="my_env",
     image=(
-        flyte.Image.from_debian_base(
-            name="my-image",
-            python_version=(3, 13)
-        )
+        flyte.Image.from_debian_base(name="my-image", python_version=(3, 13))
         .with_apt_packages("libopenblas-dev")
         .with_pip_packages("numpy")
         .with_env_vars({"OMP_NUM_THREADS": "4"})
-    )
+    ),
 )
+
 
 @env.task
 def main(x_list: list[int]) -> float:
     arr = np.array(x_list)
     return float(np.mean(arr))
+
 
 if __name__ == "__main__":
     flyte.init_from_config()
@@ -670,9 +683,9 @@ import flyte
 import numpy as np
 
 env = flyte.TaskEnvironment(
-    name="my_env",
-    image=flyte.Image.from_uv_script(__file__, name="my-image")
+    name="my_env", image=flyte.Image.from_uv_script(__file__, name="my-image")
 )
+
 
 @env.task
 def main(x_list: list[int]) -> float:
@@ -745,11 +758,13 @@ import flyte
 
 env = flyte.TaskEnvironment(name="my-env")
 
+
 @env.task(retries=3)
 async def retry() -> str:
     if random.random() < 0.7:  # 70% failure rate
         raise Exception("Task failed!")
     return "Success!"
+
 
 @env.task
 async def main() -> list[str]:
@@ -758,13 +773,14 @@ async def main() -> list[str]:
         results.append(await retry())
     except Exception as e:
         results.append(f"Failed: {e}")
-    
+
     try:
         results.append(await retry.override(retries=5)())
     except Exception as e:
         results.append(f"Failed: {e}")
-    
+
     return results
+
 
 if __name__ == "__main__":
     flyte.init_from_config()
@@ -787,11 +803,13 @@ from flyte import Timeout
 
 env = flyte.TaskEnvironment(name="my-env")
 
+
 # Using seconds as an integer
 @env.task(timeout=60)
 async def timeout_seconds() -> str:
     await asyncio.sleep(random.randint(0, 120))
     return "timeout_seconds completed"
+
 
 # Using a timedelta object
 @env.task(timeout=timedelta(minutes=1))
@@ -799,22 +817,24 @@ async def timeout_timedelta() -> str:
     await asyncio.sleep(random.randint(0, 120))
     return "timeout_timedelta completed"
 
+
 # Using the Timeout class for separate max_runtime and max_queued_time
-@env.task(timeout=Timeout(
-    max_runtime=timedelta(minutes=1),
-    max_queued_time=timedelta(minutes=1)
-))
+@env.task(
+    timeout=Timeout(
+        max_runtime=timedelta(minutes=1), max_queued_time=timedelta(minutes=1)
+    )
+)
 async def timeout_advanced() -> str:
     await asyncio.sleep(random.randint(0, 120))
     return "timeout_advanced completed"
+
 
 # Combining retries and timeouts
 @env.task(
     retries=3,
     timeout=Timeout(
-        max_runtime=timedelta(minutes=1),
-        max_queued_time=timedelta(minutes=1)
-    )
+        max_runtime=timedelta(minutes=1), max_queued_time=timedelta(minutes=1)
+    ),
 )
 async def timeout_with_retry() -> str:
     await asyncio.sleep(random.randint(0, 120))
@@ -842,16 +862,36 @@ import flyte.io
 
 env = flyte.TaskEnvironment(
     "dataframe_usage",
-    image=flyte.Image.from_debian_base().with_pip_packages("pandas", "pyarrow", "numpy"),
+    image=flyte.Image.from_debian_base().with_pip_packages(
+        "pandas", "pyarrow", "numpy"
+    ),
     resources=flyte.Resources(cpu="1", memory="2Gi"),
 )
 
 BASIC_EMPLOYEE_DATA = {
     "employee_id": range(1001, 1009),
     "name": ["Alice", "Bob", "Charlie", "Diana", "Ethan", "Fiona", "George", "Hannah"],
-    "department": ["HR", "Engineering", "Engineering", "Marketing", "Finance", "Finance", "HR", "Engineering"],
+    "department": [
+        "HR",
+        "Engineering",
+        "Engineering",
+        "Marketing",
+        "Finance",
+        "Finance",
+        "HR",
+        "Engineering",
+    ],
     "hire_date": pd.to_datetime(
-        ["2018-01-15", "2019-03-22", "2020-07-10", "2017-11-01", "2021-06-05", "2018-09-13", "2022-01-07", "2020-12-30"]
+        [
+            "2018-01-15",
+            "2019-03-22",
+            "2020-07-10",
+            "2017-11-01",
+            "2021-06-05",
+            "2018-09-13",
+            "2022-01-07",
+            "2020-12-30",
+        ]
     ),
 }
 ```
@@ -887,7 +927,9 @@ The `flyte.io.DataFrame` class creates a thin wrapper around objects of any stan
 
 ```python
 @env.task
-async def join_data(raw_dataframe: pd.DataFrame, flyte_dataframe: pd.DataFrame) -> flyte.io.DataFrame:
+async def join_data(
+    raw_dataframe: pd.DataFrame, flyte_dataframe: pd.DataFrame
+) -> flyte.io.DataFrame:
     joined_df = raw_dataframe.merge(flyte_dataframe, on="employee_id", how="inner")
     return flyte.io.DataFrame.from_df(joined_df)
 ```
@@ -918,15 +960,18 @@ import flyte
 
 env = flyte.TaskEnvironment(name="ex-mixed-structures")
 
+
 @dataclass
 class InferenceRequest:
     feature_a: float
     feature_b: float
 
+
 @dataclass
 class BatchRequest:
     requests: List[InferenceRequest]
     batch_id: str = "default"
+
 
 class PredictionSummary(BaseModel):
     predictions: List[float]
@@ -934,24 +979,27 @@ class PredictionSummary(BaseModel):
     count: int
     batch_id: str
 
+
 @env.task
 async def predict_one(request: InferenceRequest) -> float:
     """A dummy linear model: prediction = 2 * feature_a + 3 * feature_b + bias(=1.0)"""
     return 2.0 * request.feature_a + 3.0 * request.feature_b + 1.0
+
 
 @env.task
 async def process_batch(batch: BatchRequest) -> PredictionSummary:
     """Processes a batch of inference requests and returns summary statistics."""
     tasks = [predict_one(request=req) for req in batch.requests]
     predictions = await asyncio.gather(*tasks)
-    
+
     average = sum(predictions) / len(predictions) if predictions else 0.0
     return PredictionSummary(
         predictions=predictions,
         average=average,
         count=len(predictions),
-        batch_id=batch.batch_id
+        batch_id=batch.batch_id,
     )
+
 
 @env.task
 async def summarize_results(summary: PredictionSummary) -> str:
@@ -962,6 +1010,7 @@ async def summarize_results(summary: PredictionSummary) -> str:
         f"average value: {summary.average:.2f}"
     )
 
+
 @env.task
 async def main() -> str:
     batch = BatchRequest(
@@ -970,11 +1019,12 @@ async def main() -> str:
             InferenceRequest(feature_a=3.0, feature_b=4.0),
             InferenceRequest(feature_a=5.0, feature_b=6.0),
         ],
-        batch_id="demo_batch_001"
+        batch_id="demo_batch_001",
     )
     summary = await process_batch(batch)
     result = await summarize_results(summary)
     return result
+
 
 if __name__ == "__main__":
     flyte.init_from_config()
@@ -1027,8 +1077,8 @@ env = flyte.TaskEnvironment(
         flyte.Secret(key="tavily_api_key", as_env_var="TAVILY_API_KEY"),
     ],
     image=flyte.Image.from_uv_script(__file__, name="deep-research-agent", pre=True)
-        .with_apt_packages("pandoc", "texlive-xetex")
-        .with_source_file(Path("prompts.yaml"), "/root"),
+    .with_apt_packages("pandoc", "texlive-xetex")
+    .with_source_file(Path("prompts.yaml"), "/root"),
     resources=flyte.Resources(cpu=1),
 )
 ```
@@ -1147,7 +1197,9 @@ from flyte.io._file import File
 
 env = flyte.TaskEnvironment(
     name="auto-prompt-engineering",
-    image=flyte.Image.from_uv_script(__file__, name="auto-prompt-engineering", pre=True),
+    image=flyte.Image.from_uv_script(
+        __file__, name="auto-prompt-engineering", pre=True
+    ),
     secrets=[flyte.Secret(key="openai_api_key", as_env_var="OPENAI_API_KEY")],
     resources=flyte.Resources(cpu=1),
 )
@@ -1158,6 +1210,7 @@ env = flyte.TaskEnvironment(
 ```python
 from dataclasses import dataclass
 from typing import Optional
+
 
 @dataclass
 class ModelConfig:
@@ -1182,23 +1235,26 @@ async def evaluate_prompt(
     semaphore = asyncio.Semaphore(concurrency)
     counter = {"correct": 0, "processed": 0}
     counter_lock = asyncio.Lock()
-    
+
     # Write initial HTML structure for live reporting
-    await flyte.report.log.aio(CSS + """
+    await flyte.report.log.aio(
+        CSS
+        + """
     <h2 style="margin-top:0;">Model Evaluation Results</h2>
     <h3>Live Accuracy</h3>
     ...
-    """, do_flush=True)
-    
+    """,
+        do_flush=True,
+    )
+
     # Launch tasks concurrently
-    tasks = [
-        run_grouped_task(...)
-        for i, row in enumerate(df.itertuples(index=True))
-    ]
+    tasks = [run_grouped_task(...) for i, row in enumerate(df.itertuples(index=True))]
     await asyncio.gather(*tasks)
-    
+
     async with counter_lock:
-        return (counter["correct"] / counter["processed"]) if counter["processed"] else 0.0
+        return (
+            (counter["correct"] / counter["processed"]) if counter["processed"] else 0.0
+        )
 ```
 
 #### Run It

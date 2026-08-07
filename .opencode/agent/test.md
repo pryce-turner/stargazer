@@ -208,16 +208,18 @@ def bwa_indexed_reference(test_assets: Path, tmp_path_factory):
     """Generate BWA index for test reference."""
     ref_path = test_assets / "small_genome.fa"
     tmp_dir = tmp_path_factory.mktemp("bwa_index")
-    
+
     # Copy reference to temp dir
     import shutil
+
     test_ref = tmp_dir / "reference.fa"
     shutil.copy(ref_path, test_ref)
-    
+
     # Generate index
     import subprocess
+
     subprocess.run(["bwa", "index", str(test_ref)], check=True)
-    
+
     return test_ref
 ```
 

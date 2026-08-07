@@ -45,6 +45,7 @@ Extend Stargazer to support a fully local, standalone filesystem mode using Tiny
    self.local_db_path = self.local_dir / "stargazer_local.json"
    self._db: Optional[TinyDB] = None
 
+
    @property
    def db(self) -> TinyDB:
        if self._db is None:

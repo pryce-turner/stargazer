@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from conftest import GENERAL_FIXTURES_DIR
 
-from stargazer.tasks.general.samtools import samtools_faidx
 from stargazer.assets import Reference, ReferenceIndex
+from stargazer.tasks.general.samtools import samtools_faidx
 
 
 @pytest.mark.asyncio

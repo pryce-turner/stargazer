@@ -11,8 +11,10 @@ Stargazer types (Reference, Reads, Alignment, Variants) are **component containe
 await alignment.add_files([path], keyvalues={"component": "alignment"})
 
 # Named methods (new):
-ipfile = await alignment.update_alignment(path, sample_id="S123", is_sorted=True)  # Returns IpFile
-ipfile = await alignment.update_index(path, sample_id="S123")                      # Type-safe
+ipfile = await alignment.update_alignment(
+    path, sample_id="S123", is_sorted=True
+)  # Returns IpFile
+ipfile = await alignment.update_index(path, sample_id="S123")  # Type-safe
 ```
 
 ### Core Principles
@@ -32,6 +34,7 @@ Each type defines its expected components as fields with specific update methods
 @dataclass
 class Reference:
     """Reference genome with various indices."""
+
     fasta: Optional[IpFile] = None
     faidx: Optional[IpFile] = None
     aligner_index: list[IpFile] = field(default_factory=list)  # Multi-file index
@@ -39,11 +42,13 @@ class Reference:
     # Metadata
     build: str  # e.g., "GRCh38"
 
+
 @dataclass
 class Alignment:
     """BAM/CRAM alignment with indices."""
+
     alignment: Optional[IpFile] = None  # BAM/CRAM file
-    index: Optional[IpFile] = None      # BAI/CRAI file
+    index: Optional[IpFile] = None  # BAI/CRAI file
 
     # Metadata
     sample_id: str
@@ -86,7 +91,7 @@ class Reference:
                 "type": "reference",
                 "component": "fasta",
                 "build": build or self.build,
-            }
+            },
         )
         self.fasta = ipfile
         return self.fasta
@@ -114,7 +119,7 @@ class Reference:
                 "type": "reference",
                 "component": "faidx",
                 "build": build or self.build,
-            }
+            },
         )
         self.faidx = ipfile
         return self.faidx
@@ -148,7 +153,7 @@ class Reference:
                 "component": "aligner_index",
                 "aligner": aligner,
                 "build": build or self.build,
-            }
+            },
         )
         self.aligner_index.append(ipfile)
         return ipfile
@@ -184,8 +189,10 @@ class Alignment:
                 "component": "alignment",
                 "format": format,
                 "sample_id": self.sample_id,
-                "is_sorted": str(is_sorted if is_sorted is not None else self.is_sorted),
-            }
+                "is_sorted": str(
+                    is_sorted if is_sorted is not None else self.is_sorted
+                ),
+            },
         )
         self.alignment = ipfile
 
@@ -217,7 +224,7 @@ class Alignment:
                 "type": "alignment",
                 "component": "index",
                 "sample_id": sample_id or self.sample_id,
-            }
+            },
         )
         self.index = ipfile
         return self.index
@@ -338,17 +345,21 @@ alignments = await hydrate({"type": "alignment", "sample_id": "NA12878"})
 refs = await hydrate({"type": "reference", "build": "GRCh38"})
 
 # Hydrate multiple samples (cartesian product)
-alignments = await hydrate({
-    "type": "alignment",
-    "sample_id": ["S1", "S2", "S3"],
-})
+alignments = await hydrate(
+    {
+        "type": "alignment",
+        "sample_id": ["S1", "S2", "S3"],
+    }
+)
 
 # Hydrate specific components only
-refs = await hydrate({
-    "type": "reference",
-    "build": "GRCh38",
-    "component": ["fasta", "faidx"],
-})
+refs = await hydrate(
+    {
+        "type": "reference",
+        "build": "GRCh38",
+        "component": ["fasta", "faidx"],
+    }
+)
 ```
 
 ### Workflow Pattern: Version Updates
@@ -372,17 +383,15 @@ async def sort_bam(alignment: Alignment) -> Alignment:
 
     # Sort in place (cache directory)
     sorted_path = default_client.cache_dir / f"{alignment.sample_id}.sorted.bam"
-    subprocess.run([
-        "samtools", "sort",
-        "-o", str(sorted_path),
-        str(unsorted_path)
-    ], check=True, cwd=str(default_client.cache_dir))
+    subprocess.run(
+        ["samtools", "sort", "-o", str(sorted_path), str(unsorted_path)],
+        check=True,
+        cwd=str(default_client.cache_dir),
+    )
 
     # Update alignment with sorted BAM - upload happens automatically
     await alignment.update_alignment(
-        sorted_path,
-        sample_id=alignment.sample_id,
-        is_sorted=True
+        sorted_path, sample_id=alignment.sample_id, is_sorted=True
     )
 
     return alignment
@@ -399,17 +408,14 @@ async def index_bam(alignment: Alignment) -> Alignment:
 
     # Index in cache directory
     index_path = bam_path.with_suffix(bam_path.suffix + ".bai")
-    subprocess.run([
-        "samtools", "index",
-        str(bam_path),
-        str(index_path)
-    ], check=True, cwd=str(default_client.cache_dir))
+    subprocess.run(
+        ["samtools", "index", str(bam_path), str(index_path)],
+        check=True,
+        cwd=str(default_client.cache_dir),
+    )
 
     # Update index component - upload happens automatically
-    await alignment.update_index(
-        index_path,
-        sample_id=alignment.sample_id
-    )
+    await alignment.update_index(index_path, sample_id=alignment.sample_id)
 
     return alignment
 ```
@@ -430,12 +436,11 @@ r1_path = reads_r1.local_path
 r2_path = reads_r2.local_path
 
 # Pass explicit paths to command
-subprocess.run([
-    "bwa", "mem",
-    str(fasta_path),
-    str(r1_path),
-    str(r2_path)
-], cwd=str(default_client.cache_dir), check=True)
+subprocess.run(
+    ["bwa", "mem", str(fasta_path), str(r1_path), str(r2_path)],
+    cwd=str(default_client.cache_dir),
+    check=True,
+)
 ```
 
 ### Command Execution Pattern
@@ -451,13 +456,18 @@ await default_client.download_file(alignment.alignment)
 
 # All file operations happen in cache_dir
 subprocess.run(
-    ["gatk", "HaplotypeCaller",
-     "-R", str(reference.fasta.local_path),
-     "-I", str(alignment.alignment.local_path),
-     "-O", str(default_client.cache_dir / "output.vcf")
+    [
+        "gatk",
+        "HaplotypeCaller",
+        "-R",
+        str(reference.fasta.local_path),
+        "-I",
+        str(alignment.alignment.local_path),
+        "-O",
+        str(default_client.cache_dir / "output.vcf"),
     ],
     cwd=str(default_client.cache_dir),  # Always run in cache
-    check=True
+    check=True,
 )
 ```
 

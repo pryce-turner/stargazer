@@ -6,8 +6,9 @@ spec: [docs/architecture/tasks.md](../architecture/tasks.md)
 
 import asyncio
 import shlex
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from stargazer.config import logger
 

@@ -4,8 +4,8 @@ import pytest
 import scanpy as sc
 from conftest import SCRNA_FIXTURES_DIR
 
-from stargazer.tasks.scrna.cluster import cluster
 from stargazer.assets.scrna import AnnData
+from stargazer.tasks.scrna.cluster import cluster
 
 REDUCED_FIXTURE = SCRNA_FIXTURES_DIR / "reduced.h5ad"
 

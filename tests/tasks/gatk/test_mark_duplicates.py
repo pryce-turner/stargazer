@@ -7,8 +7,8 @@ import shutil
 import pytest
 from conftest import GATK_FIXTURES_DIR
 
-from stargazer.tasks.gatk.mark_duplicates import mark_duplicates
 from stargazer.assets import Alignment
+from stargazer.tasks.gatk.mark_duplicates import mark_duplicates
 
 
 @pytest.mark.asyncio

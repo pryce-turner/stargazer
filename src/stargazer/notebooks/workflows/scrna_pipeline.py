@@ -37,8 +37,8 @@ def _():
 
     import asyncio
 
-    import marimo as mo
     import flyte
+    import marimo as mo
     import matplotlib.pyplot as plt
     import numpy as np
 
@@ -96,7 +96,6 @@ def _(mo):
             ),
         ]
     )
-    return
 
 
 @app.cell
@@ -128,6 +127,7 @@ def _(mo):
 async def _(mo, sample_picker):
     """Assemble raw AnnData for every selected sample (auto-fetch on miss)."""
     import scanpy as sc
+
     from stargazer.assets.asset import assemble
     from stargazer.bundles import fetch_bundle
 
@@ -217,7 +217,6 @@ def _(mo, plt, raw_ads, raw_assets, sc):
             _fig,
         ]
     )
-    return
 
 
 @app.cell
@@ -245,21 +244,20 @@ def _(mo):
         `asyncio.gather`, so multiple samples run concurrently.
         """
     )
-    return
 
 
 @app.cell
 def _():
     """Define the preprocess and cluster_and_annotate workflows."""
-    from stargazer.config import scrna_env
     from stargazer.assets.scrna import AnnData
+    from stargazer.config import scrna_env
     from stargazer.tasks.scrna import (
-        qc_filter,
-        normalize,
-        select_features,
-        reduce_dimensions,
         cluster,
         find_markers,
+        normalize,
+        qc_filter,
+        reduce_dimensions,
+        select_features,
     )
 
     @scrna_env.task(cache="disable")
@@ -406,7 +404,7 @@ def _(annotated_ads, annotated_assets, mo, np, plt):
                 fontweight="bold",
                 ha="center",
                 va="center",
-                bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.8),
+                bbox={"boxstyle": "round,pad=0.2", "fc": "white", "alpha": 0.8},
             )
 
         _ax.set_title(f"{_asset.sample_id} — {_n_clusters} clusters")
@@ -416,7 +414,6 @@ def _(annotated_ads, annotated_assets, mo, np, plt):
 
     _fig.tight_layout()
     mo.vstack([mo.md("### Clusters per sample"), _fig])
-    return
 
 
 @app.cell
@@ -444,7 +441,6 @@ def _(annotated_ads, annotated_assets, mo):
             mo.ui.table(_rows, selection=None),
         ]
     )
-    return
 
 
 @app.cell
@@ -462,7 +458,6 @@ def _(mo):
         - [Execution](/tutorials/execution) — local vs remote
         """
     )
-    return
 
 
 if __name__ == "__main__":

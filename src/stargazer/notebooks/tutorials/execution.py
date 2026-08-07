@@ -31,8 +31,8 @@ def _():
     """Imports and Flyte init."""
     import time
 
-    import marimo as mo
     import flyte
+    import marimo as mo
     import matplotlib.pyplot as plt
 
     flyte.init_from_config()
@@ -73,7 +73,6 @@ def _(mo):
         runnable code from drifting apart.
         """
     )
-    return
 
 
 @app.cell
@@ -233,7 +232,6 @@ def _(mo, plt, summaries_remote):
             _fig,
         ]
     )
-    return
 
 
 if __name__ == "__main__":

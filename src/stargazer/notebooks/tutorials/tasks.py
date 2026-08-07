@@ -31,12 +31,12 @@ app = marimo.App(width="medium")
 with app.setup:
     import csv
     import json
+    from dataclasses import dataclass
     from pathlib import Path
     from typing import ClassVar
-    from dataclasses import dataclass
 
-    import marimo as mo
     import flyte
+    import marimo as mo
 
     from stargazer.assets.asset import Asset
     from stargazer.notebooks.tutorials.assets import SampleSheet
@@ -76,7 +76,6 @@ def _():
         (`execution.py`).
         """
     )
-    return
 
 
 @app.cell
@@ -94,7 +93,6 @@ def _():
         produced it, so `sheet.fetch()` will pull the summary alongside.
         """
     )
-    return
 
 
 @app.class_definition
@@ -156,7 +154,6 @@ def _():
         it, and the later tutorials import the same env.
         """
     )
-    return
 
 
 @app.cell
@@ -175,7 +172,6 @@ def _():
         container. New kind of workload → new env in `config.py`.
         """
     )
-    return
 
 
 @app.cell
@@ -203,7 +199,6 @@ def _():
         tutorials feed it inputs and run it.
         """
     )
-    return
 
 
 @app.function
@@ -261,7 +256,6 @@ def _():
         whole thing locally and on a remote cluster.
         """
     )
-    return
 
 
 if __name__ == "__main__":

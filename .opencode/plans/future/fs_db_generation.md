@@ -110,12 +110,14 @@ src/stargazer/utils/introspection.py  # File content introspection helpers
 @dataclass
 class FileClassification:
     """Result of classifying a single file."""
-    path: Path                           # Absolute path
-    rel_path: str                        # Relative to scan root
-    keyvalues: dict[str, str]            # Inferred metadata
-    confidence: float                    # 0.0-1.0, how confident the inference is
-    missing_fields: list[str]            # Fields that could not be inferred
-    ambiguities: list[str]              # Human-readable descriptions of uncertainties
+
+    path: Path  # Absolute path
+    rel_path: str  # Relative to scan root
+    keyvalues: dict[str, str]  # Inferred metadata
+    confidence: float  # 0.0-1.0, how confident the inference is
+    missing_fields: list[str]  # Fields that could not be inferred
+    ambiguities: list[str]  # Human-readable descriptions of uncertainties
+
 
 class FilesystemScanner:
     """Scans a directory and infers keyvalues metadata for genomics files."""
@@ -123,7 +125,9 @@ class FilesystemScanner:
     def classify(self, path: Path, root: Path) -> FileClassification | None:
         """Classify a single file. Returns None if unrecognizable."""
 
-    def scan_directory(self, directory: Path, recursive: bool = True) -> list[FileClassification]:
+    def scan_directory(
+        self, directory: Path, recursive: bool = True
+    ) -> list[FileClassification]:
         """Scan all files in a directory and classify them.
         Returns classifications sorted by confidence (lowest first, so ambiguities surface early).
         """
@@ -143,6 +147,7 @@ async def scan_filesystem(directory: str) -> dict:
         }
     """
 
+
 async def introspect_file(path: str, method: str) -> dict:
     """MCP tool: Introspect a file's contents for metadata.
 
@@ -154,6 +159,7 @@ async def introspect_file(path: str, method: str) -> dict:
         Parsed metadata from file contents.
     """
 
+
 async def register_file(
     path: str,
     keyvalues: dict[str, str],
@@ -163,6 +169,7 @@ async def register_file(
 
     Called after the LLM has resolved all ambiguities for a file.
     """
+
 
 async def commit_scan(
     directory: str,
@@ -185,7 +192,7 @@ Matches `LocalStorageClient` format:
     "keyvalues": classified.keyvalues,
     "created_at": now_utc_iso,
     "is_public": False,
-    "rel_path": rel_path,    # relative path from scan root, supports subdirs
+    "rel_path": rel_path,  # relative path from scan root, supports subdirs
 }
 ```
 

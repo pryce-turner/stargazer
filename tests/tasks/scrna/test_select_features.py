@@ -4,8 +4,8 @@ import pytest
 import scanpy as sc
 from conftest import SCRNA_FIXTURES_DIR
 
-from stargazer.tasks.scrna.select_features import select_features
 from stargazer.assets.scrna import AnnData
+from stargazer.tasks.scrna.select_features import select_features
 
 NORMALIZED_FIXTURE = SCRNA_FIXTURES_DIR / "normalized.h5ad"
 

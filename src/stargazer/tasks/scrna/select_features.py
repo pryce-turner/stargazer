@@ -5,8 +5,8 @@ spec: [docs/workflows/scrna.md](../workflows/scrna.md)
 """
 
 import stargazer.utils.local_storage as _storage
-from stargazer.config import scrna_env, logger
 from stargazer.assets.scrna import AnnData
+from stargazer.config import logger, scrna_env
 
 
 @scrna_env.task

@@ -7,30 +7,29 @@ spec: [docs/architecture/types.md](../architecture/types.md)
 import dataclasses
 from pathlib import Path
 
-from stargazer.assets.asset import _BASE_FIELDS, Asset
-from stargazer.assets.asset import assemble
-from stargazer.config import logger
-from stargazer.assets.reference import (
-    Reference,
-    ReferenceIndex,
-    SequenceDict,
-    AlignerIndex,
-)
-from stargazer.assets.reads import R1, R2
 from stargazer.assets.alignment import (
     Alignment,
     AlignmentIndex,
     BQSRReport,
     DuplicateMetrics,
 )
-from stargazer.assets.variants import (
-    Variants,
-    VariantsIndex,
-    KnownSites,
-    KnownSitesIndex,
-    VQSRModel,
+from stargazer.assets.asset import _BASE_FIELDS, Asset, assemble
+from stargazer.assets.reads import R1, R2
+from stargazer.assets.reference import (
+    AlignerIndex,
+    Reference,
+    ReferenceIndex,
+    SequenceDict,
 )
 from stargazer.assets.scrna import AnnData
+from stargazer.assets.variants import (
+    KnownSites,
+    KnownSitesIndex,
+    Variants,
+    VariantsIndex,
+    VQSRModel,
+)
+from stargazer.config import logger
 
 # Auto-populated via Asset.__init_subclass__
 ASSET_REGISTRY: dict[str, type[Asset]] = Asset._registry
@@ -115,33 +114,33 @@ def build_asset(keyvalues: dict[str, str], path: Path | None = None) -> Asset:
 
 
 __all__ = [
-    # Base
-    "Asset",
     # Registry + helpers
     "ASSET_REGISTRY",
-    "build_asset",
-    "specialize",
-    # Query
-    "assemble",
+    # Read assets
+    "R1",
+    "R2",
+    "AlignerIndex",
+    # Alignment assets
+    "Alignment",
+    "AlignmentIndex",
+    # scRNA-seq assets
+    "AnnData",
+    # Base
+    "Asset",
+    "BQSRReport",
+    "DuplicateMetrics",
+    "KnownSites",
+    "KnownSitesIndex",
     # Reference assets
     "Reference",
     "ReferenceIndex",
     "SequenceDict",
-    "AlignerIndex",
-    # Read assets
-    "R1",
-    "R2",
-    # Alignment assets
-    "Alignment",
-    "AlignmentIndex",
-    "BQSRReport",
-    "DuplicateMetrics",
+    "VQSRModel",
     # Variants assets
     "Variants",
     "VariantsIndex",
-    "KnownSites",
-    "KnownSitesIndex",
-    "VQSRModel",
-    # scRNA-seq assets
-    "AnnData",
+    # Query
+    "assemble",
+    "build_asset",
+    "specialize",
 ]

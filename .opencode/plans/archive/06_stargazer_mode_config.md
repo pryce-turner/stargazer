@@ -63,9 +63,11 @@ Add mode resolution to `src/stargazer/utils/storage.py`:
 ```python
 from enum import Enum
 
+
 class StargazerMode(Enum):
     LOCAL = "local"
     CLOUD = "cloud"
+
 
 def resolve_mode() -> StargazerMode:
     mode_str = os.environ.get("STARGAZER_MODE", "local").lower()

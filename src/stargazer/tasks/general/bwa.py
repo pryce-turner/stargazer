@@ -8,9 +8,8 @@ import asyncio
 import shlex
 
 import stargazer.utils.local_storage as _storage
-from stargazer.config import gatk_env
-from stargazer.assets import Alignment, AlignerIndex, R1, R2, Reference
-from stargazer.config import logger
+from stargazer.assets import R1, R2, AlignerIndex, Alignment, Reference
+from stargazer.config import gatk_env, logger
 from stargazer.utils import _run
 
 
@@ -44,7 +43,7 @@ async def bwa_index(ref: Reference) -> list[AlignerIndex]:
 
     prefix = output_dir / base_name
     cmd = ["bwa", "index", "-p", str(prefix), str(ref_path)]
-    stdout, stderr = await _run(cmd, cwd=str(output_dir))
+    _stdout, _stderr = await _run(cmd, cwd=str(output_dir))
 
     indices = []
     for ext in index_extensions:

@@ -3,16 +3,16 @@ Tests for Reference asset types.
 """
 
 import tempfile
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 
 import stargazer.utils.local_storage as _storage_mod
 from stargazer.assets import specialize
 from stargazer.assets.reference import (
+    AlignerIndex,
     Reference,
     ReferenceIndex,
-    AlignerIndex,
     SequenceDict,
 )
 

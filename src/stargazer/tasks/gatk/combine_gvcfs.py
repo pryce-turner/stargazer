@@ -10,9 +10,8 @@ spec: [docs/architecture/tasks.md](../architecture/tasks.md)
 from pathlib import Path
 
 import stargazer.utils.local_storage as _storage
-from stargazer.config import gatk_env
 from stargazer.assets import Reference, Variants, VariantsIndex
-from stargazer.config import logger
+from stargazer.config import gatk_env, logger
 from stargazer.utils import _run
 
 
@@ -75,7 +74,7 @@ async def combine_gvcfs(
     for gvcf_path in gvcf_paths:
         cmd.extend(["-V", str(gvcf_path)])
 
-    stdout, stderr = await _run(cmd, cwd=str(output_dir))
+    _stdout, stderr = await _run(cmd, cwd=str(output_dir))
 
     if not output_gvcf.exists():
         raise FileNotFoundError(

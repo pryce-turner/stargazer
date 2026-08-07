@@ -3,8 +3,9 @@ Tests for subprocess utilities.
 """
 
 import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 
 from stargazer.utils.subprocess import _run
 
