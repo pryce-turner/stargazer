@@ -13,11 +13,14 @@
 #
 # What this DOES automate (cluster-side, lost on container recreate):
 #   1. Storage signed-URL endpoint   localhost:30002 → rustfs-svc.flyte:9000
-#   2. internalApps FLYTE_AWS_ENDPOINT  rustfs.flyte → rustfs-svc.flyte
-#   3. Serving domain off `.localhost` → ${DEVBOX_DOMAIN} (Knative + Flyte)
-#   4. CoreDNS wildcard  *.${DEVBOX_DOMAIN} → node InternalIP  (so App.endpoint
+#   2. Serving domain off `.localhost` → ${DEVBOX_DOMAIN} (Knative + Flyte)
+#   3. CoreDNS wildcard  *.${DEVBOX_DOMAIN} → node InternalIP  (so App.endpoint
 #      resolves in-cluster on the :30081 NodePort)
-#   5. flyte-binary + coredns restarts, racing the addon controller correctly
+#   4. flyte-binary + coredns restarts, racing the addon controller correctly
+#
+# internalApps FLYTE_AWS_ENDPOINT (`rustfs.flyte` → `rustfs-svc.flyte`) was
+# fixed upstream — the devbox image now ships the correct service name, so
+# there is nothing to patch. The verify step still warns if it ever regresses.
 #
 # What it does NOT do (already handled in app code — see the workarounds doc):
 #   - AppEnvironment secret baking into env_vars (app/admin_app.py)
@@ -27,7 +30,7 @@
 # Laptop-side DNS (sudo, macOS) is PRINTED by default; run with --laptop to apply.
 #
 # Usage:
-#   scripts/devbox-setup.sh [--dry-run] [--laptop] [--verify-pod] [--domain D]
+#   cli/devbox-setup.sh [--dry-run] [--laptop] [--verify-pod] [--domain D]
 #
 set -euo pipefail
 
@@ -44,7 +47,9 @@ ok()   { printf '%s✓ %s%s\n' "$c_green" "$*" "$c_off"; }
 warn() { printf '%s! %s%s\n' "$c_yellow" "$*" "$c_off" >&2; }
 die()  { printf '%s✗ %s%s\n' "$c_red"  "$*" "$c_off" >&2; exit 1; }
 
-usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+# Print the leading comment block (stops at the first non-comment line, so it
+# survives edits to the header without a hardcoded line count).
+usage() { sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -76,18 +81,17 @@ dex test -f "$MANIFEST" || die "addon manifest not found at $MANIFEST inside $CO
 log "Target container=$CONTAINER  domain=$DOMAIN  dry-run=$DRY_RUN"
 
 # ---------------------------------------------------------------------------
-# 1–3. Patch the k3s addon manifest (the ConfigMaps are addon-owned; editing
+# 1–2. Patch the k3s addon manifest (the ConfigMaps are addon-owned; editing
 #      them directly reverts, so we patch the source manifest and let the
 #      controller re-render).
 # ---------------------------------------------------------------------------
 log "Patching addon manifest ($MANIFEST)"
 run dex sed -i \
     -e 's|endpoint: http://localhost:30002|endpoint: http://rustfs-svc.flyte:9000|g' \
-    -e 's|FLYTE_AWS_ENDPOINT: http://rustfs.flyte:9000|FLYTE_AWS_ENDPOINT: http://rustfs-svc.flyte:9000|g' \
     -e 's|^  localhost: ""|  '"$DOMAIN"': ""|' \
     -e "s|baseDomain: localhost|baseDomain: $DOMAIN|" \
     "$MANIFEST"
-ok "Manifest patched (signed-URL endpoint, FLYTE_AWS_ENDPOINT, Knative domain, baseDomain)"
+ok "Manifest patched (signed-URL endpoint, Knative domain, baseDomain)"
 
 # ---------------------------------------------------------------------------
 # Wait for the addon controller to re-render the LIVE ConfigMaps. flyte-binary
@@ -102,8 +106,7 @@ else
     for _ in $(seq 1 30); do
         cm="$(kc get cm flyte-binary-config -n flyte -o yaml 2>/dev/null || true)"
         dom="$(kc get cm config-domain -n knative-serving -o jsonpath='{.data}' 2>/dev/null || true)"
-        if ! grep -qE 'rustfs\.flyte:9000' <<<"$cm" \
-            && grep -q "baseDomain: $DOMAIN" <<<"$cm" \
+        if grep -q "baseDomain: $DOMAIN" <<<"$cm" \
             && grep -q "$DOMAIN" <<<"$dom"; then
             rendered=1; break
         fi
@@ -169,8 +172,10 @@ ok "coredns restart issued"
 if [ "$DRY_RUN" = 0 ]; then
     log "Verifying cluster-side state"
     cm="$(kc get cm flyte-binary-config -n flyte -o yaml 2>/dev/null || true)"
+    # Regression guard: the bare `rustfs.flyte` service name was an upstream
+    # devbox bug, fixed in the image — we no longer patch it, only notice it.
     grep -qE 'rustfs\.flyte:9000' <<<"$cm" \
-        && warn "flyte-binary-config still has a bare rustfs.flyte:9000" \
+        && warn "flyte-binary-config has a bare rustfs.flyte:9000 — upstream regression, patch it by hand (see devbox_workarounds.md)" \
         || ok "no bare rustfs.flyte endpoints remain"
     grep -q "baseDomain: $DOMAIN" <<<"$cm" && ok "baseDomain=$DOMAIN" || warn "baseDomain not set to $DOMAIN"
     kc get cm coredns-custom -n kube-system -o name >/dev/null 2>&1 \

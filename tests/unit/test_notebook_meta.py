@@ -154,7 +154,7 @@ def test_inject_resources_replaces_existing_block():
 
 def test_description_absent_parses_empty():
     """No description in the header yields the empty string, not None."""
-    assert parse_notebook_description(_nb('cpu = 2', body="x\n")) == ""
+    assert parse_notebook_description(_nb("cpu = 2", body="x\n")) == ""
     assert parse_notebook_description("import marimo\n") == ""
 
 

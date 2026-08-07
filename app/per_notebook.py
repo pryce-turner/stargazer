@@ -56,11 +56,9 @@ from flyte.remote import App
 from flyteidl2.app import app_payload_pb2
 from flyteidl2.common import identifier_pb2, list_pb2
 
-from stargazer.config import PROJECT_ROOT, STARGAZER_ENV_VARS
-
 from app import config
 from app.notebook_meta import NotebookResources
-
+from stargazer.config import PROJECT_ROOT, STARGAZER_ENV_VARS
 
 # Bake the proxy as a TOP-LEVEL module (not under `app/`) because Flyte's
 # loaded_modules code bundle ships an `app/` package into the pod's cwd

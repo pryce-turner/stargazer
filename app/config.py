@@ -25,7 +25,6 @@ spec: [docs/architecture/app.md](../docs/architecture/app.md)
 
 import os
 
-
 _TRUTHY = ("1", "true", "yes", "on")
 
 

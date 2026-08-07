@@ -12,7 +12,6 @@ spec: [docs/architecture/app.md](../docs/architecture/app.md)
 from dataclasses import dataclass
 from typing import Literal
 
-
 # Workspace-section paths live under /workspace/<src/...>/workspace at runtime;
 # image-shipped notebooks live at /stargazer/<src/...> after the Docker COPY.
 # Snapshots live in a sibling dir on the fork (same sparse-clone cone), served

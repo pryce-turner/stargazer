@@ -4,7 +4,7 @@
 
 When you hit a deploy/runtime issue against devbox that takes more than one round-trip to diagnose, append it here with a one-line description and the minimum the next session needs to know.
 
-**Automation:** the *cluster-side* workarounds below (signed-URL endpoint, `FLYTE_AWS_ENDPOINT`, serving domain off `.localhost`, CoreDNS wildcard, and the restarts that race the addon controller) are applied to a fresh devbox by [`scripts/devbox-setup.sh`](../../scripts/devbox-setup.sh) — run it once after recreating the container (`./scripts/devbox-setup.sh`, or `--dry-run` to preview, `--laptop` to also apply the macOS DNS steps, `--domain` to override). It's idempotent. The remaining entries are app-code/design (already in the codebase), not scriptable; keep this file and the script in sync when you add a new cluster-side quirk.
+**Automation:** the *cluster-side* workarounds below (signed-URL endpoint, serving domain off `.localhost`, CoreDNS wildcard, and the restarts that race the addon controller) are applied to a fresh devbox by [`cli/devbox-setup.sh`](../../cli/devbox-setup.sh) — run it once after recreating the container (`./cli/devbox-setup.sh`, or `--dry-run` to preview, `--laptop` to also apply the macOS DNS steps, `--domain` to override). It's idempotent. The remaining entries are app-code/design (already in the codebase), not scriptable; keep this file and the script in sync when you add a new cluster-side quirk.
 
 ---
 
@@ -47,19 +47,32 @@ There is no single host/IP that's reachable from both the laptop and from in-clu
 
 ```python
 _SECRET_NAMES = ("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "SESSION_SECRET")
+_GITHUB_APP_NAMES = ("GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_SLUG")
+_STORAGE_NAMES = ("PINATA_JWT",)
 _RUNTIME_SECRETS = {
-    name: os.environ[name] for name in _SECRET_NAMES if os.environ.get(name)
+    name: os.environ[name]
+    for name in (*_SECRET_NAMES, *_GITHUB_APP_NAMES, *_STORAGE_NAMES)
+    if os.environ.get(name)
 }
 app_env = flyte.app.AppEnvironment(..., env_vars=_RUNTIME_SECRETS)
 ```
 
-Deployer must `export GITHUB_CLIENT_ID=…` etc. before `python -m app.admin_app`. **Trade-off / prod gap:** secret values are stored in the App spec in Flyte's DB. This is the one accepted parity gap in `app/` — revisit when Flyte supports App-pod secret injection (then switch to `secrets=[flyte.Secret(key=…, as_env_var=…)]` and drop the baking).
+**The deployer's shell is the only source of these — export all of them before `python -m app.admin_app`.** Keep this list in sync with `app/admin_app.py`; a var that isn't exported is silently omitted, so the pod starts fine and misbehaves later:
+
+| Env var | Needed for | If missing |
+| --- | --- | --- |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | OAuth login | login fails outright (loud) |
+| `SESSION_SECRET` | session cookie + proxy cookie check | no session survives (loud) |
+| `GITHUB_APP_ID` **and** `GITHUB_APP_PRIVATE_KEY` | signing the App JWT that mints fork-scoped tokens | **silent** — the login-time install check raises, gets swallowed as "app not installed", and Workspace saving reads *disabled* for every user who genuinely has a fork + install |
+| `GITHUB_APP_SLUG` | the App install-redirect URL | `/workspace/enable` skips the install step |
+| `PINATA_JWT` | `/assets` routes | asset manager renders "not configured" |
+
+The two App credentials are **all-or-nothing**: the id is useless without the key. Neither set is a valid pre-App deploy; only *some* set is a deploy mistake, so `app/admin_app.py` logs a `Partial GitHub App config` warning at import for exactly that case. This bit us once already — `GITHUB_APP_PRIVATE_KEY` became required in `916dbdc` (2026-06-05, plan 18, when `workspace_enabled` moved from `fork + OAuth token` to `fork + live App-install check`) and went unexported for two months, because the install callback trusts the install and only a *fresh login* re-checks it.
+
+**Trade-off / prod gap:** secret values are stored in the App spec in Flyte's DB. This is the one accepted parity gap in `app/` — revisit when Flyte supports App-pod secret injection (then switch to `secrets=[flyte.Secret(key=…, as_env_var=…)]` and drop the baking).
 
 Paths investigated and rejected: (a) `pod_template=PodTemplate(labels={"inject-flyte-secrets": "true"})` — even with the label the webhook has no secret annotations to inject, because flyte-binary never stamps them on App pods; (b) relaxing the webhook `objectSelector` — same reason, and `failurePolicy: Fail` makes a match-all selector dangerous (a webhook blip would block all pod scheduling).
 
----
-
-## `flyte.serve()` fails with `rustfs.flyte` DNS error
 
 **Symptom:** App pod crash-loops before user code runs, logs show `GenericError: Generic S3 error ... http://rustfs.flyte:9000/... Name or service not known`.
 

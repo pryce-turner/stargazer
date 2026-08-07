@@ -25,7 +25,6 @@ from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Request
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
-
 SESSION_COOKIE = "sg_session"
 SESSION_MAX_AGE = 60 * 60 * 24 * 30  # 30 days
 
