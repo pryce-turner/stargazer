@@ -9,10 +9,11 @@ on the fork's `main`. Snapshotting *moves* a notebook into `notebooks/snapshots/
 idempotent. Every write is guarded against ever targeting the upstream source
 (`is_genuine_fork`, plus an upstream-name check before create/delete).
 
-All calls ride the shared pooled client (`app.http_client`), which never
-follows redirects — so a transfer redirect always *surfaces* (writes error
-out; reads treat non-200 explicitly) rather than silently retargeting
-upstream.
+All calls ride the shared pooled client (`app.http_client`), which does not
+follow redirects — so a transfer redirect always *surfaces* rather than
+silently retargeting upstream. Writes reject a 3xx explicitly
+(`_reject_redirect`); reads go through `_ensure_ok`, which treats anything
+outside 2xx as a failure so a redirect body is never handed to `.json()`.
 
 spec: [docs/architecture/app.md](../docs/architecture/app.md)
 """

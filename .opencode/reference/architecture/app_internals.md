@@ -29,6 +29,26 @@ The **GitHub App private key** is the trust anchor: held solely by the admin, it
 
 **Pods never receive a GitHub credential.** `per_notebook_env` injects only a signed *capability* (`SG_POD_TOKEN`, carrying the fork name, not a token). At clone (`launch-notebook.sh`) and push (`proxy.py`), the pod exchanges that capability at the admin's `POST /workspace/pod-token` for a fresh fork-scoped token, fed to git via `GIT_ASKPASS` against a token-free remote — so nothing lands in `.git/config` or `os.environ`. The worst a malicious cell can do is mint a fork-scoped, ~1h, revocable token (uninstalling the App cuts it off) — never the broad OAuth token. The session cookie is **encrypted** (Fernet, keyed off `SESSION_SECRET`; the proxy mirrors the derivation), so even its identity fields are opaque client-side.
 
+The proxy's `_cookie_is_valid` catches **`Exception`**, deliberately. It is an auth gate: every failure mode — bad token, wrong secret, malformed input, anything unforeseen — must fall through to a clean `401`, never escape the middleware as a `500`. Narrowing that catch to a specific tuple is a regression, not a tightening; it was tried and turned denials into server errors.
+
+## Deploy-Time Secret Contract
+
+App-pod `secrets=[...]` is dropped by this Flyte build (see `devbox_workarounds.md`), so **every secret is baked into `env_vars` from the deployer's shell at deploy time** via `_RUNTIME_SECRETS` in `app/admin_app.py`. That dict is built with `if os.environ.get(name)` — a variable that isn't exported is **silently omitted**, and the pod starts fine and misbehaves later. The full set:
+
+| Env var | Powers | If absent |
+|---|---|---|
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | OAuth login | login fails outright (loud) |
+| `SESSION_SECRET` | session cookie + the proxy's mirrored cookie check | no session survives (loud) |
+| `GITHUB_APP_ID` **+** `GITHUB_APP_PRIVATE_KEY` | signing the App JWT that mints fork-scoped tokens | **silent** — see below |
+| `GITHUB_APP_SLUG` | the App install-redirect URL | `/workspace/enable` skips the install step |
+| `PINATA_JWT` | `/assets` routes | asset manager renders "not configured" |
+
+**The App credentials are all-or-nothing, and enforced.** The id cannot sign without the key, so a partial export produces a deploy that *looks* configured while every `get_installation_id` raises — which `/auth/callback` catches and records as `app_installed = False`, so Workspace saving reads **disabled for every user**, including users with a valid fork and a live install. This is a real incident, not a hypothetical: `GITHUB_APP_PRIVATE_KEY` became required in `916dbdc` (2026-06-05, when `workspace_enabled` moved from `fork + OAuth token` to `fork + live App-install check`) and went unexported for two months. It hid because `/auth/app-install-callback` sets `app_installed = True` **on trust** — so the flag flips on right after installing and only a *fresh login* re-checks it against the API.
+
+`_partial_app_creds()` now closes this: `main()` refuses to deploy when exactly one of the pair is set (both-set and neither-set are valid — the latter is a pre-App deploy), and module import logs a warning so a pod that somehow starts half-configured says so in its logs rather than just misbehaving.
+
+**Diagnosability.** `find_existing_fork` returning `None` is logged at INFO, not silently — a "no fork" and a "lookup failed" both land on the Enable button, and without the log they are indistinguishable.
+
 ## Creating Notebooks & Per-Notebook Resources
 
 Once opted in, the Workspace section offers a **New notebook** create tile (name + blank|template seed only — resources and the tile blurb are set afterward). The seeds are real shipped notebooks — `notebooks/workspace/blank.py` and `template.py` — not generated source. `POST /workspace/create` slugifies the name, copies the chosen seed, injects **default** resources into its `[tool.stargazer]` header (`with_stargazer_resources`), writes it to the fork's `main` under `notebooks/workspace/`, and **returns the rendered tile HTML**. (Notebooks don't pin marimo in their PEP 723 headers — `marimo --sandbox` injects the image launcher's version into each kernel venv, so the two never skew without per-notebook bookkeeping.) Create is a pure "add a notebook" action: the browser drops that tile into the Workspace grid; it does not launch or navigate. Both seed slugs are reserved create names and filtered out of the dashboard's tile listing.
@@ -85,7 +105,14 @@ Each Workspace tile carries a **📸 snapshot** button (between the gear and tra
 
 **One pooled client per process — never a client per request.**
 
-- **Admin:** every outbound call — GitHub API traffic (`app.github`, `app.oauth`, `app.installation_tokens`) and admin→pod calls (workspace listing probes, save syncs) — rides the shared `app/http_client.py` client (lazy singleton, closed in the admin lifespan), so connections to `api.github.com` and pod endpoints are pooled instead of paying a TLS handshake per call. aiohttp is gone from the app tier (it remains an SDK dep for `stargazer.utils.pinata`). Redirect-following is **off** on the shared client: the GitHub write helpers must *see* a 3xx (`_reject_redirect` — a transfer redirect must never silently retarget upstream) and reads treat non-200 explicitly, so per-request `follow_redirects=True` is passed only on the admin→pod calls. Tests install an `httpx.MockTransport`-backed client straight into `http_client._client`.
+- **Admin:** every outbound call — GitHub API traffic (`app.github`, `app.oauth`, `app.installation_tokens`) and admin→pod calls (workspace listing probes, save syncs) — rides the shared `app/http_client.py` client (lazy singleton, closed in the admin lifespan), so connections to `api.github.com` and pod endpoints are pooled instead of paying a TLS handshake per call. aiohttp is gone from the app tier (it remains an SDK dep for `stargazer.utils.pinata`). Redirect-following is **off** on the shared client and re-enabled per call, because httpx differs from the aiohttp it replaced in two ways that both bite on GitHub 3xx:
+
+- httpx does not follow redirects by default (aiohttp did), and its `raise_for_status()` **errors on 3xx** (aiohttp only raised at ≥400). So a redirect that used to be followed transparently now surfaces — which is what the write guards want and what naive reads do not.
+- Writes keep redirects off: `_reject_redirect` must *see* the 3xx, since a transfer redirect silently retargeting the upstream repo is the failure this whole guard exists to prevent.
+- Reads that GitHub legitimately redirects opt in per call. `get_installation_id` passes `follow_redirects=True` because GitHub 301s `/users/{owner}/installation` after an owner login rename; without it the call raises, `/auth/callback` swallows that as "app not installed", and Workspace saving silently reads *disabled* for a user who is correctly set up. Admin→pod calls follow redirects for the same per-call reason.
+- `_ensure_ok` treats **anything outside 2xx** as failure, 3xx included. A `status < 400` check would let a redirect through to a `.json()` on the redirect body — a parse error far from the actual cause.
+
+Tests install an `httpx.MockTransport`-backed client straight into `http_client._client`.
 - **Proxy:** the standalone `app/proxy.py` (which can't import the app package) keeps its own module-local shared client with keep-alive to loopback marimo (`_upstream_client`, closed in the proxy lifespan after the shutdown sync). Only `text/html` responses are buffered — for the terminal-overlay splice; everything else (static bundles, API JSON, downloads) **streams** through chunk-by-chunk (`StreamingResponse` over `aiter_raw`, `BackgroundTask(resp.aclose)`) with its original headers, so large bodies never sit in proxy memory. The raw query string passes through untouched (duplicate params intact), hop-by-hop headers are stripped, and the request body is streamed only when one exists (no gratuitous chunked framing on GETs).
 - **Concurrency:** the landing route resolves the workspace and snapshot listings with `asyncio.gather`; `_list_workspace_from_pods` probes all known pod endpoints in parallel (2s each, first success wins).
 - **Compression:** the admin app runs `GZipMiddleware` (min 1KB) for the dashboard HTML and asset listings. The proxy does **not** — it relays marimo's own encoding untouched.

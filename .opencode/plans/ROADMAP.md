@@ -51,6 +51,8 @@ Upcoming work is ordered — the **next feature is at the top**. Move items into
 
 ## Complete
 
+- ✅ Toolchain pinning + lint/SDK catch-up (2026-08-07): ruff pinned to one version across `.pre-commit-config.yaml` and `pyproject.toml` (they had drifted 0.14→0.16, where ruff's default rule set grew 59→413 and the two gates diverged); 322 findings resolved — auto-fixes applied, deliberate patterns declared in `[tool.ruff.lint]` with rationale, the frozen v1 reference snapshot untracked and gitignored. MCP SDK migrated to 2.x (`FastMCP` → `MCPServer`, `mcp.server.fastmcp` → `mcp.server`) and bounded to `<3`; that import had been broken, taking 3 unit tests and a pre-commit hook with it.
+- ✅ GitHub App deploy-credential gate (2026-08-07): a half-exported App credential pair (`GITHUB_APP_ID` without `GITHUB_APP_PRIVATE_KEY`) made Workspace saving read as disabled for every user, silently, for two months. `main()` now refuses to deploy on a partial pair, module import warns, and the previously-silent "no fork found" login path logs. Deploy-secret contract documented in [`app_internals.md`](../reference/architecture/app_internals.md).
 - ✅ App-tier performance & modernization audit (2026-07-06): one pooled HTTP client per process (aiohttp out of the app tier), streaming notebook proxy, `/launch/status` via a single project deployment list, gzip on the admin, single-flight public-asset cache. [`22_app_tier_performance_audit.md`](./22_app_tier_performance_audit.md)
 - ✅ scRNA preprocessing tutorial rebuild (Asset → Task → Workflow → local → remote). [`archive/15_scrna_tutorial_rebuild.md`](./archive/15_scrna_tutorial_rebuild.md)
 - ✅ Integrate marimo as the notebook experience (basic plumbing — per-user provisioning, in-pod execution, tutorial scaffold).
