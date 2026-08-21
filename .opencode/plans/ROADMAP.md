@@ -47,6 +47,18 @@ Upcoming work is ordered — the **next feature is at the top**. Move items into
       real payoff of TUS (survive a dropped multi-GB upload); deferred until
       a flaky large upload demands it.
 
+19. **Notebook-declared pod image (`main_img`).** A notebook declares the image
+    its own pod runs on as a `flyte.Image` expression in its setup block;
+    `/launch` parses it statically, replays it onto the base image, builds it,
+    and serves the pod on the result. Replaces the growth curve of the
+    `[tool.stargazer]` table + settings modal — every new environment knob
+    currently costs a form field, parser, writer, and template row — with one
+    object that already has the whole Image API behind it. **Blocked on a
+    remote image builder:** the admin pod cannot build with the local Docker
+    builder (see `_build_and_push_notebook_image`). Scoped to workspace
+    notebooks first; image-baked tutorials/workflows deferred.
+    [`23_notebook_declared_image.md`](./23_notebook_declared_image.md)
+
 ## Complete
 
 - ✅ Toolchain pinning + lint/SDK catch-up (2026-08-07): ruff pinned to one version across `.pre-commit-config.yaml` and `pyproject.toml` (they had drifted 0.14→0.16, where ruff's default rule set grew 59→413 and the two gates diverged); 322 findings resolved — auto-fixes applied, deliberate patterns declared in `[tool.ruff.lint]` with rationale, the frozen v1 reference snapshot untracked and gitignored. MCP SDK migrated to 2.x (`FastMCP` → `MCPServer`, `mcp.server.fastmcp` → `mcp.server`) and bounded to `<3`; that import had been broken, taking 3 unit tests and a pre-commit hook with it.
